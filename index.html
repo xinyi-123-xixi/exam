@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智能考试系统 - Supabase 联网版</title>
-    <!-- Supabase SDK -->
+    <!-- Supabase SDK （只加载一次） -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <!-- 文件解析库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -13,7 +13,7 @@
     <style>
         :root { --primary: #4f6ef7; --success: #22c55e; --warning: #f59e0b; --danger: #ef4444; --bg: #f0f4f8; --card: #fff; --text: #1e293b; --border: #e2e8f0; --radius: 16px; }
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); }
+        body { font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
         .header { background:linear-gradient(135deg,#1e293b,#334155); color:#fff; padding:16px 0; position:sticky; top:0; z-index:100; }
         .header-inner { max-width:1300px; margin:0 auto; padding:0 24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
         .logo { font-size:1.5rem; font-weight:700; }
@@ -83,7 +83,6 @@
 </header>
 
 <div class="main-container">
-    <!-- 考试页面 -->
     <section class="section active" id="exam-section">
         <div class="card">
             <div class="card-header">📚 选择试卷</div>
@@ -104,8 +103,6 @@
             <div class="card"><div id="exam-questions-container"></div><button class="btn btn-success" id="submit-exam-btn" style="margin-top:20px;">✅ 提交考卷</button></div>
         </div>
     </section>
-
-    <!-- 管理页面 -->
     <section class="section" id="admin-section">
         <div class="card">
             <div class="card-header">📤 上传学习笔记</div>
@@ -132,8 +129,6 @@
             <div id="admin-paper-list"></div>
         </div>
     </section>
-
-    <!-- 记录页面 -->
     <section class="section" id="records-section">
         <div class="card">
             <div class="card-header">📊 考试记录总表
@@ -169,32 +164,11 @@
 </div>
 
 <script>
-// ==================== Supabase 配置 ====================
+// ⚠️ 确保只有一个 supabase 客户端，变量名改为 client 避免冲突
 const SUPABASE_URL = 'https://vlpwtmfgjxveuswiuufl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_tviG7d9Hq7Yv8W2LrokevA_NOM2nRV0';
-// 解决变量名冲突：将 supabase 命名为 supabaseClient
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ==================== 数据操作 ====================
-async function getPapers() {
-    const { data, error } = await supabaseClient.from('papers').select('*');
-    if (error) throw error;
-    const papers = {};
-    data.forEach(doc => papers[doc.id] = doc);
-    return papers;
-}
-async function addPaper(paper) { await supabaseClient.from('papers').insert(paper); }
-async function updatePaper(id, updates) { await supabaseClient.from('papers').update(updates).eq('id', id); }
-async function deletePaper(id) { await supabaseClient.from('papers').delete().eq('id', id); }
-async function getRecords() {
-    const { data, error } = await supabaseClient.from('records').select('*').order('exam_date', { ascending: false });
-    if (error) throw error;
-    return data || [];
-}
-async function addRecord(record) { await supabaseClient.from('records').insert(record); }
-async function deleteRecord(id) { await supabaseClient.from('records').delete().eq('id', id); }
-
-// ==================== 全局状态 ====================
 const $ = s => document.getElementById(s);
 const $$ = s => document.querySelectorAll(s);
 const ADMIN_PASS = 'admin123';
@@ -204,24 +178,17 @@ const S = { content:'', inExam:false, timer:null, left:1800, vc:0, sid:'', sname
 function toast(msg, err){ const d=document.createElement('div'); d.className='toast '+(err?'toast-error':'toast-success'); d.textContent=msg; document.body.appendChild(d); setTimeout(()=>d.remove(),2500); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 function fmt(s){ const m=Math.floor(s/60), sec=s%60; return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; }
-
-// PDF.js
 if (typeof pdfjsLib !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-// 角色切换
 function setRole(r){
-    role=r;
+    role=r; document.body.classList.toggle('admin-mode', r==='admin');
     $('role-badge').textContent = r==='admin'?'🔒 管理员':'👤 考生';
     $('role-badge').className = 'role-badge '+(r==='admin'?'admin':'student');
-    // 隐藏/显示管理、记录标签
     $$('.nav-tab').forEach(tab=>{
         const sec=tab.dataset.section;
         if(sec==='admin'||sec==='records') tab.style.display = r==='admin'?'':'none';
     });
-    // 如果当前页面在考生模式下不可见，切回考试页
-    if(r!=='admin' && ($('admin-section').classList.contains('active')||$('records-section').classList.contains('active'))) {
-        switchSec('exam');
-    }
+    if(r!=='admin' && ($('admin-section').classList.contains('active')||$('records-section').classList.contains('active'))) switchSec('exam');
     refreshAll();
     if(r==='admin' && $('records-section').classList.contains('active')) loadRecords();
 }
@@ -238,13 +205,14 @@ $('role-toggle-btn').addEventListener('click', ()=>{
     const p=prompt('密码：'); if(p===ADMIN_PASS) setRole('admin'); else if(p!==null) alert('密码错误');
 });
 
-// 刷新列表
 async function refreshAll(){
     try {
-        const papers=await getPapers();
+        const { data, error } = await client.from('papers').select('*');
+        if (error) throw error;
+        const papers = {}; data.forEach(doc => papers[doc.id] = doc);
         let eh='', ah='';
         for(const id in papers){
-            const p=papers[id];
+            const p = papers[id];
             if(role==='student' && p.visible===false) continue;
             eh+=`<div class="paper-item ${selPaperId===id?'selected':''}" onclick="selPaper('${id}',this)"><span>📄 ${esc(p.name)}</span></div>`;
             ah+=`<div style="display:flex;justify-content:space-between;padding:8px 0;"><span>📄 ${esc(p.name)} (${p.visible===false?'隐藏':'公开'})</span><span><button class="btn btn-sm btn-outline" onclick="openSet('${id}')">设置</button> <button class="btn btn-sm btn-danger" onclick="delPaper('${id}')">删除</button></span></div>`;
@@ -252,29 +220,21 @@ async function refreshAll(){
         $('paper-list-container').innerHTML=eh||'<p>暂无试卷</p>';
         $('admin-paper-list').innerHTML=ah||'<p>暂无试卷</p>';
         updateExamState();
-    } catch (e) {
-        console.error(e);
-        toast('加载试卷失败，请检查数据库权限', true);
-    }
+    } catch (e) { console.error(e); toast('加载失败', true); }
 }
 window.selPaper=(id,el)=>{ $$('.paper-item').forEach(i=>i.classList.remove('selected')); el.classList.add('selected'); selPaperId=id; updateExamState(); };
-window.delPaper=async(id)=>{ if(confirm('删除？')){ await deletePaper(id); if(selPaperId===id) selPaperId=null; refreshAll(); } };
-window.openSet=(id)=>{ curSetId=id; getPapers().then(papers=>{ const p=papers[id]; $('setting-visible').checked=p.visible!==false; $('settings-modal').style.display='flex'; }); };
-$('save-settings-btn').addEventListener('click', async()=>{ if(!curSetId) return; await updatePaper(curSetId,{visible:$('setting-visible').checked}); $('settings-modal').style.display='none'; refreshAll(); });
+window.delPaper=async(id)=>{ if(confirm('删除？')){ await client.from('papers').delete().eq('id', id); if(selPaperId===id) selPaperId=null; refreshAll(); } };
+window.openSet=(id)=>{ curSetId=id; client.from('papers').select('*').then(({data})=>{ const p=data[0]; $('setting-visible').checked=p.visible!==false; $('settings-modal').style.display='flex'; }); };
+$('save-settings-btn').addEventListener('click', async()=>{ if(!curSetId) return; await client.from('papers').update({visible:$('setting-visible').checked}).eq('id', curSetId); $('settings-modal').style.display='none'; refreshAll(); });
 $('cancel-settings-btn').addEventListener('click', ()=>$('settings-modal').style.display='none');
 
 async function updateExamState(){
     const ok=$('exam-student-id').value.trim()&&$('exam-student-name').value.trim();
     if(!selPaperId||!ok){ $('begin-exam-btn').disabled=true; return; }
-    try {
-        const records=await getRecords();
-        const done=records.some(r=>r.paper_id===selPaperId&&r.student_id===$('exam-student-id').value.trim());
-        $('begin-exam-btn').disabled=done;
-        $('exam-login-hint').textContent=done?'您已考过':'✅ 可开始';
-    } catch (e) {
-        $('begin-exam-btn').disabled=false;
-        $('exam-login-hint').textContent='⚠️ 无法验证是否已考过';
-    }
+    const { data } = await client.from('records').select('*').eq('paper_id', selPaperId).eq('student_id', $('exam-student-id').value.trim());
+    const done = data && data.length > 0;
+    $('begin-exam-btn').disabled=done;
+    $('exam-login-hint').textContent=done?'您已考过':'✅ 可开始';
 }
 $('exam-student-id').addEventListener('input', updateExamState);
 $('exam-student-name').addEventListener('input', updateExamState);
@@ -285,27 +245,12 @@ async function processMultipleFiles(files){
     for(const f of files){
         const ext=f.name.split('.').pop().toLowerCase();
         if(['txt','md','json','csv'].includes(ext)) text+=await f.text()+'\n\n';
-        else if(ext==='docx'){
-            const buf=await f.arrayBuffer();
-            const res=await mammoth.extractRawText({arrayBuffer:buf});
-            text+=res.value+'\n\n';
-        }else if(ext==='xlsx'){
-            const buf=await f.arrayBuffer();
-            const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
-            wb.SheetNames.forEach(s=>text+=XLSX.utils.sheet_to_csv(wb.Sheets[s])+'\n');
-        }else if(ext==='pdf'){
-            try{
-                const buf=await f.arrayBuffer();
-                const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
-                let pt=''; for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const content=await page.getTextContent(); pt+=content.items.map(item=>item.str).join(' ')+'\n'; }
-                text+=pt+'\n\n';
-            }catch(e){ toast('PDF解析失败',true); }
-        }
+        else if(ext==='docx'){ const buf=await f.arrayBuffer(); const res=await mammoth.extractRawText({arrayBuffer:buf}); text+=res.value+'\n\n'; }
+        else if(ext==='xlsx'){ const buf=await f.arrayBuffer(); const wb=XLSX.read(new Uint8Array(buf),{type:'array'}); wb.SheetNames.forEach(s=>text+=XLSX.utils.sheet_to_csv(wb.Sheets[s])+'\n'); }
+        else if(ext==='pdf'){ try{ const buf=await f.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise; let pt=''; for(let i=1;i<=pdf.numPages;i++){ const page=await pdf.getPage(i); const content=await page.getTextContent(); pt+=content.items.map(item=>item.str).join(' ')+'\n'; } text+=pt+'\n\n'; }catch(e){ toast('PDF解析失败',true); } }
     }
     if(text.trim().length<200){ toast('内容过短',true); return; }
-    S.content=text;
-    $('upload-status').textContent=`✅ 已加载 ${files.length} 个文件`;
-    toast('文件加载成功');
+    S.content=text; $('upload-status').textContent='✅ 已加载文件'; toast('文件加载成功');
 }
 $('upload-zone').addEventListener('click', ()=>$('file-input').click());
 $('file-input').addEventListener('change', e=>{ if(e.target.files.length) processMultipleFiles(Array.from(e.target.files)); });
@@ -315,7 +260,6 @@ $('upload-zone').addEventListener('drop', e=>{ e.preventDefault(); e.currentTarg
 $('paste-text-btn').addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text').focus(); });
 $('confirm-paste').addEventListener('click', ()=>{ const t=$('pasted-text').value.trim(); if(!t) return toast('请粘贴',true); S.content=t; $('upload-status').textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// 出题引擎
 function generatePaperOptimized(content, paperName){
     const clean=content.replace(/[\r\n]+/g,'\n').replace(/[　 ]+/g,' ').trim();
     const sentences=clean.split(/[。！？.!?\n]+/).filter(s=>s.trim().length>6);
@@ -324,7 +268,6 @@ function generatePaperOptimized(content, paperName){
     const wordFreq={}; allWords.forEach(w=>{ const l=w.toLowerCase(); if(w.length>=2&&!stopWords.has(l)&&!/^\d+$/.test(w)) wordFreq[w]=(wordFreq[w]||0)+1; });
     const keywords=Object.entries(wordFreq).sort((a,b)=>b[1]-a[1]).slice(0,100).map(e=>e[0]);
     const defSents=sentences.filter(s=>/(是|指|称|即|定义为|所谓)/.test(s)&&s.length>10);
-    const catSents=sentences.filter(s=>/(分为|包括|包含|组成|种类|类别|类型)/.test(s)&&s.length>10);
     const questions=[]; const used=new Set();
     function pick(pool,fallback){
         let av=pool.filter(s=>!used.has(s)); if(av.length===0) av=fallback.filter(s=>!used.has(s));
@@ -332,50 +275,21 @@ function generatePaperOptimized(content, paperName){
         const s=av[Math.floor(Math.random()*av.length)]; used.add(s); return s;
     }
     function term(sent){ const ws=sent.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—]+/).filter(w=>w.length>=2&&!stopWords.has(w.toLowerCase())); return ws.length>0?ws[0]:'关键词'; }
-    // 7单选
-    for(let i=0;i<7;i++){
-        const sent=pick(defSents.length?defSents:sentences,sentences); const t=term(sent);
-        const qText=`以下关于"${t}"的说法，正确的是？`;
-        const correct=t; let opts=[correct];
-        opts.push(...keywords.filter(k=>k!==correct).slice(0,3));
-        opts=[...new Set(opts)].slice(0,4);
-        while(opts.length<4) opts.push('选项'+String.fromCharCode(65+opts.length));
-        opts=opts.sort(()=>Math.random()-0.5);
-        const ci=opts.indexOf(correct);
-        questions.push({type:'single',text:qText,options:opts,correctIndex:ci>=0?ci:0,correctLabel:String.fromCharCode(65+(ci>=0?ci:0)),explanation:`核心概念：“${correct}”`});
-    }
-    // 7多选
-    for(let i=0;i<7;i++){
-        const sent=pick(catSents.length?catSents:sentences,sentences); const t=term(sent);
-        const qText=`下列属于"${t}"特点的有？（多选）`;
-        const ws=sent.split(/[\s,，、]+/).filter(w=>w.length>=2&&!stopWords.has(w.toLowerCase()));
-        const corrects=ws.slice(0,3);
-        const allOpts=[...corrects,...keywords.filter(k=>!corrects.includes(k)).slice(0,2)].sort(()=>Math.random()-0.5).slice(0,5);
-        const inds=[], labs=[]; allOpts.forEach((o,idx)=>{ if(corrects.includes(o)){ inds.push(idx); labs.push(String.fromCharCode(65+idx)); } });
-        if(labs.length<2){ for(let k=0;k<allOpts.length;k++) if(!labs.includes(String.fromCharCode(65+k))){ labs.push(String.fromCharCode(65+k)); inds.push(k); if(labs.length>=2) break; } }
-        questions.push({type:'multiple',text:qText,options:allOpts,correctIndices:inds,correctLabels:labs,explanation:`正确选项：${labs.join('、')}`});
-    }
-    // 6判断
-    for(let i=0;i<6;i++){
-        const sent=sentences[Math.floor(Math.random()*sentences.length)]; const isTrue=Math.random()>0.45;
-        let stmt=isTrue?sent:'不'+sent;
-        if(stmt===sent&&!isTrue) stmt='不'+sent;
-        questions.push({type:'judge',text:stmt,correctAnswer:isTrue?'正确':'错误',explanation:isTrue?'与原文一致':'原文被修改'});
-    }
+    for(let i=0;i<7;i++){ const sent=pick(defSents.length?defSents:sentences,sentences); const t=term(sent); const correct=t; let opts=[correct]; const sim=keywords.filter(k=>k!==correct&&k.length===correct.length).slice(0,1); const cls=sent.split(/[\s,，、]+/).filter(w=>w!==correct&&w.length>=2).slice(0,1); opts.push(...sim,...cls,'非'+correct); opts=[...new Set(opts)].slice(0,4); while(opts.length<4) opts.push('选项'+String.fromCharCode(65+opts.length)); opts=opts.sort(()=>Math.random()-0.5); const ci=opts.indexOf(correct); questions.push({type:'single',text:`以下关于"${t}"的说法，正确的是？`,options:opts,correctIndex:ci>=0?ci:0,correctLabel:String.fromCharCode(65+(ci>=0?ci:0)),explanation:`核心概念：“${correct}”`}); }
+    for(let i=0;i<7;i++){ const sent=pick(sentences,sentences); const t=term(sent); const ws=sent.split(/[\s,，、]+/).filter(w=>w.length>=2&&!stopWords.has(w.toLowerCase())); const cc=2+Math.floor(Math.random()*3); const corrects=ws.slice(0,cc); const wrongs=keywords.filter(k=>!corrects.includes(k)).slice(0,5-cc); const allOpts=[...corrects,...wrongs].sort(()=>Math.random()-0.5).slice(0,5); const inds=[], labs=[]; allOpts.forEach((o,idx)=>{ if(corrects.includes(o)){ inds.push(idx); labs.push(String.fromCharCode(65+idx)); } }); if(labs.length<2){ for(let k=0;k<allOpts.length;k++) if(!labs.includes(String.fromCharCode(65+k))){ labs.push(String.fromCharCode(65+k)); inds.push(k); break; } } questions.push({type:'multiple',text:`下列属于"${t}"特点的有？（多选）`,options:allOpts,correctIndices:inds,correctLabels:labs,explanation:`正确选项：${labs.join('、')}`}); }
+    for(let i=0;i<6;i++){ const sent=sentences[Math.floor(Math.random()*sentences.length)]; const isTrue=Math.random()>0.45; let stmt=isTrue?sent:(Math.random()<0.5?sent.replace(/是/g,'不是'):'不'+sent); if(stmt===sent&&!isTrue) stmt='不'+sent; questions.push({type:'judge',text:stmt,correctAnswer:isTrue?'正确':'错误',explanation:isTrue?'与原文一致':'原文被修改'}); }
     return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
 }
 $('generate-paper-btn').addEventListener('click', async ()=>{
-    if(!S.content||S.content.trim().length<200) return toast('请先上传或粘贴至少200字笔记',true);
+    if(!S.content||S.content.trim().length<200) return toast('请先上传至少200字笔记',true);
     const name=$('paper-name-input').value.trim()||('试卷 '+new Date().toLocaleString());
     const paper=generatePaperOptimized(S.content,name);
-    await addPaper(paper);
-    $('paper-name-input').value=''; $('upload-status').textContent='✅ 试卷已生成';
-    refreshAll(); toast('试卷生成成功');
+    await client.from('papers').insert(paper);
+    $('paper-name-input').value=''; $('upload-status').textContent='✅ 试卷已生成'; refreshAll(); toast('试卷生成成功');
 });
 
-// 考试流程
 $('begin-exam-btn').addEventListener('click', async ()=>{
-    const papers=await getPapers(); curPaper=papers[selPaperId];
+    const { data } = await client.from('papers').select('*').eq('id', selPaperId); curPaper=data[0];
     if(!curPaper) return;
     S.sid=$('exam-student-id').value.trim(); S.sname=$('exam-student-name').value.trim();
     S.left=1800; S.vc=0; S.answers=[]; S.start=new Date(); S.inExam=true;
@@ -414,7 +328,7 @@ async function submitExam(){
     });
     const dur=fmt(Math.min(Math.round((new Date()-S.start)/1000),1800));
     const score=correct*5;
-    await addRecord({ paper_id:selPaperId, student_id:S.sid, student_name:S.sname, score, correct_count:correct, total_questions:20, violations:S.vc, duration:dur, details, exam_date:new Date().toISOString(), paper_name:curPaper.name });
+    await client.from('records').insert({ paper_id:selPaperId, student_id:S.sid, student_name:S.sname, score, correct_count:correct, total_questions:20, violations:S.vc, duration:dur, details, exam_date:new Date().toISOString(), paper_name:curPaper.name });
     $('result-score').textContent=score+'分'; $('result-detail').textContent=`正确 ${correct}/20 用时 ${dur}`;
     $('feedback-box').innerHTML=genFeedback(details);
     $('result-modal').style.display='flex';
@@ -426,16 +340,14 @@ function showDetail(details){ let h=''; details.forEach((d,i)=>h+=`<p>${d.isCorr
 $('close-detail-btn').addEventListener('click', ()=>$('detail-modal').style.display='none');
 ['settings-modal','result-modal','detail-modal'].forEach(id=>$(id).addEventListener('click', e=>{ if(e.target===$(id)) $(id).style.display='none'; }));
 
-// 记录管理
 async function loadRecords(){
-    const records=await getRecords();
-    if(!records.length){ $('records-tbody').innerHTML='<tr><td colspan="10">暂无记录</td></tr>'; return; }
-    $('records-tbody').innerHTML=records.reverse().map((r,i)=>`<tr><td>${records.length-i}</td><td>${new Date(r.exam_date).toLocaleString()}</td><td>${esc(r.paper_name)}</td><td>${esc(r.student_id)}</td><td>${esc(r.student_name)}</td><td>${r.score}分</td><td>${r.correct_count}/${r.total_questions}</td><td>${r.violations}</td><td>${r.duration}</td><td><button onclick="viewRecord('${r.id}')">详情</button> <button style="background:#f59e0b;color:#fff;" onclick="retakeRecord('${r.id}')">重考</button></td></tr>`).join('');
+    const { data } = await client.from('records').select('*').order('exam_date', { ascending: false });
+    if(!data.length){ $('records-tbody').innerHTML='<tr><td colspan="10">暂无记录</td></tr>'; return; }
+    $('records-tbody').innerHTML=data.reverse().map((r,i)=>`<tr><td>${data.length-i}</td><td>${new Date(r.exam_date).toLocaleString()}</td><td>${esc(r.paper_name)}</td><td>${esc(r.student_id)}</td><td>${esc(r.student_name)}</td><td>${r.score}分</td><td>${r.correct_count}/${r.total_questions}</td><td>${r.violations}</td><td>${r.duration}</td><td><button onclick="viewRecord('${r.id}')">详情</button> <button style="background:#f59e0b;color:#fff;" onclick="retakeRecord('${r.id}')">重考</button></td></tr>`).join('');
 }
-window.viewRecord=async(id)=>{ const records=await getRecords(); const r=records.find(r=>r.id===id); if(r) showDetail(r.details); };
-window.retakeRecord=async(id)=>{ if(confirm('允许重考？')){ await deleteRecord(id); loadRecords(); }};
+window.viewRecord=async(id)=>{ const { data } = await client.from('records').select('*').eq('id', id); if(data[0]) showDetail(data[0].details); };
+window.retakeRecord=async(id)=>{ if(confirm('允许重考？')){ await client.from('records').delete().eq('id', id); loadRecords(); }};
 
-// 初始化
 setRole('student');
 switchSec('exam');
 </script>
