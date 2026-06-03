@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能考试系统 - Supabase 联网版</title>
-    <!-- Supabase SDK （只加载一次） -->
+    <title>智能考试系统 - AI 出题版</title>
+    <!-- Supabase SDK（只加载一次） -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <!-- 文件解析库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -164,7 +164,7 @@
 </div>
 
 <script>
-// ⚠️ 确保只有一个 supabase 客户端，变量名改为 client 避免冲突
+// ==================== Supabase 配置 ====================
 const SUPABASE_URL = 'https://vlpwtmfgjxveuswiuufl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_tviG7d9Hq7Yv8W2LrokevA_NOM2nRV0';
 const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -260,32 +260,151 @@ $('upload-zone').addEventListener('drop', e=>{ e.preventDefault(); e.currentTarg
 $('paste-text-btn').addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text').focus(); });
 $('confirm-paste').addEventListener('click', ()=>{ const t=$('pasted-text').value.trim(); if(!t) return toast('请粘贴',true); S.content=t; $('upload-status').textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-function generatePaperOptimized(content, paperName){
-    const clean=content.replace(/[\r\n]+/g,'\n').replace(/[　 ]+/g,' ').trim();
-    const sentences=clean.split(/[。！？.!?\n]+/).filter(s=>s.trim().length>6);
-    const allWords=clean.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—\n]+/).filter(w=>w.length>=2);
-    const stopWords=new Set(['的','了','在','是','我','有','和','就','不','人','都','一','一个','上','也','很','到','说','要','去','你','会','着','没有','看','好','自己','这','他','她','它','们','那','什么','怎么','如何','可以','这个','那个','因为','所以','但是','而且','然后','如果','虽然','已经','正在','将','被','把','从','对','与','或','及','等','其','其中','以及','关于','对于','通过','根据','按照','由于','为了','除了','经过']);
-    const wordFreq={}; allWords.forEach(w=>{ const l=w.toLowerCase(); if(w.length>=2&&!stopWords.has(l)&&!/^\d+$/.test(w)) wordFreq[w]=(wordFreq[w]||0)+1; });
-    const keywords=Object.entries(wordFreq).sort((a,b)=>b[1]-a[1]).slice(0,100).map(e=>e[0]);
-    const defSents=sentences.filter(s=>/(是|指|称|即|定义为|所谓)/.test(s)&&s.length>10);
-    const questions=[]; const used=new Set();
-    function pick(pool,fallback){
-        let av=pool.filter(s=>!used.has(s)); if(av.length===0) av=fallback.filter(s=>!used.has(s));
-        if(av.length===0) av=sentences.filter(s=>!used.has(s)); if(av.length===0) return sentences[Math.floor(Math.random()*sentences.length)];
-        const s=av[Math.floor(Math.random()*av.length)]; used.add(s); return s;
+// ==================== AI 出题引擎 (DeepSeek) ====================
+async function generatePaperOptimized(content, paperName) {
+    const DEEPSEEK_API_KEY = 'sk-4ba0bb80b2df4d98aaed402f17922ab2';
+    const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+
+    const prompt = `你是一位资深的考试出题专家。请根据以下学习笔记的内容，生成一套完整的试卷。
+
+【试卷要求】
+1. 共20道题：7道单选题 + 7道多选题 + 6道判断题
+2. 难度适中，以基础题为主，难题控制在1-2题
+3. 题干必须清晰完整，选项要有区分度，干扰项要有迷惑性
+4. 多选题固定5个选项，正确答案2-4个随机
+5. 判断题对错比例约各半
+6. 每道题附带一句简短的解析
+
+【输出格式】
+请严格按照以下JSON格式输出，不要输出任何其他内容：
+{
+  "questions": [
+    {
+      "type": "single",
+      "text": "单选题题目",
+      "options": ["A选项内容", "B选项内容", "C选项内容", "D选项内容"],
+      "correctIndex": 0,
+      "correctLabel": "A",
+      "explanation": "解析"
+    },
+    {
+      "type": "multiple",
+      "text": "多选题题目",
+      "options": ["A","B","C","D","E"],
+      "correctIndices": [0, 2],
+      "correctLabels": ["A", "C"],
+      "explanation": "解析"
+    },
+    {
+      "type": "judge",
+      "text": "判断题题目（陈述句）",
+      "correctAnswer": "正确",
+      "explanation": "解析"
     }
-    function term(sent){ const ws=sent.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—]+/).filter(w=>w.length>=2&&!stopWords.has(w.toLowerCase())); return ws.length>0?ws[0]:'关键词'; }
-    for(let i=0;i<7;i++){ const sent=pick(defSents.length?defSents:sentences,sentences); const t=term(sent); const correct=t; let opts=[correct]; const sim=keywords.filter(k=>k!==correct&&k.length===correct.length).slice(0,1); const cls=sent.split(/[\s,，、]+/).filter(w=>w!==correct&&w.length>=2).slice(0,1); opts.push(...sim,...cls,'非'+correct); opts=[...new Set(opts)].slice(0,4); while(opts.length<4) opts.push('选项'+String.fromCharCode(65+opts.length)); opts=opts.sort(()=>Math.random()-0.5); const ci=opts.indexOf(correct); questions.push({type:'single',text:`以下关于"${t}"的说法，正确的是？`,options:opts,correctIndex:ci>=0?ci:0,correctLabel:String.fromCharCode(65+(ci>=0?ci:0)),explanation:`核心概念：“${correct}”`}); }
-    for(let i=0;i<7;i++){ const sent=pick(sentences,sentences); const t=term(sent); const ws=sent.split(/[\s,，、]+/).filter(w=>w.length>=2&&!stopWords.has(w.toLowerCase())); const cc=2+Math.floor(Math.random()*3); const corrects=ws.slice(0,cc); const wrongs=keywords.filter(k=>!corrects.includes(k)).slice(0,5-cc); const allOpts=[...corrects,...wrongs].sort(()=>Math.random()-0.5).slice(0,5); const inds=[], labs=[]; allOpts.forEach((o,idx)=>{ if(corrects.includes(o)){ inds.push(idx); labs.push(String.fromCharCode(65+idx)); } }); if(labs.length<2){ for(let k=0;k<allOpts.length;k++) if(!labs.includes(String.fromCharCode(65+k))){ labs.push(String.fromCharCode(65+k)); inds.push(k); break; } } questions.push({type:'multiple',text:`下列属于"${t}"特点的有？（多选）`,options:allOpts,correctIndices:inds,correctLabels:labs,explanation:`正确选项：${labs.join('、')}`}); }
-    for(let i=0;i<6;i++){ const sent=sentences[Math.floor(Math.random()*sentences.length)]; const isTrue=Math.random()>0.45; let stmt=isTrue?sent:(Math.random()<0.5?sent.replace(/是/g,'不是'):'不'+sent); if(stmt===sent&&!isTrue) stmt='不'+sent; questions.push({type:'judge',text:stmt,correctAnswer:isTrue?'正确':'错误',explanation:isTrue?'与原文一致':'原文被修改'}); }
-    return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
+  ]
 }
+
+【学习笔记内容】
+${content.substring(0, 8000)}
+`;
+
+    try {
+        const response = await fetch(DEEPSEEK_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: [
+                    { role: 'system', content: '你是一个专业的考试出题系统，你必须严格按照JSON格式输出，不要输出任何解释性文字。' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.7,
+                max_tokens: 4096
+            })
+        });
+
+        const data = await response.json();
+        if (!data.choices || !data.choices[0]) {
+            throw new Error('API 返回异常，可能额度不足');
+        }
+        const aiOutput = data.choices[0].message.content;
+        // 清理可能包裹的代码块标记
+        const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
+        const result = JSON.parse(jsonStr);
+
+        if (!result.questions || result.questions.length < 20) {
+            throw new Error('AI 返回的题目数量不足20题');
+        }
+
+        const paper = {
+            name: paperName,
+            questions: result.questions.slice(0, 20),
+            visible: true,
+            created_at: new Date().toISOString()
+        };
+        return paper;
+    } catch (error) {
+        console.error('AI 出题失败，使用备用规则出题', error);
+        toast('AI 出题失败，正在使用备用方案……', true);
+        return generatePaperFallback(content, paperName);
+    }
+}
+
+// 备用规则出题
+function generatePaperFallback(content, paperName) {
+    const clean = content.replace(/[\r\n]+/g, '\n').trim();
+    const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 6);
+    const questions = [];
+    for (let i = 0; i < 20; i++) {
+        const s = sentences[i % sentences.length] || '相关知识';
+        if (i < 7) {
+            questions.push({
+                type: 'single',
+                text: `关于"${s.substring(0, 20)}…"，以下正确的是？`,
+                options: ['A 选项', 'B 选项', 'C 选项', 'D 选项'],
+                correctIndex: 0,
+                correctLabel: 'A',
+                explanation: '请参考笔记'
+            });
+        } else if (i < 14) {
+            questions.push({
+                type: 'multiple',
+                text: `关于"${s.substring(0, 20)}…"，正确的有？（多选）`,
+                options: ['A', 'B', 'C', 'D', 'E'],
+                correctIndices: [0, 1],
+                correctLabels: ['A', 'B'],
+                explanation: '请参考笔记'
+            });
+        } else {
+            questions.push({
+                type: 'judge',
+                text: s.substring(0, 50),
+                correctAnswer: Math.random() > 0.5 ? '正确' : '错误',
+                explanation: '请参考笔记'
+            });
+        }
+    }
+    return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
+}
+
 $('generate-paper-btn').addEventListener('click', async ()=>{
     if(!S.content||S.content.trim().length<200) return toast('请先上传至少200字笔记',true);
     const name=$('paper-name-input').value.trim()||('试卷 '+new Date().toLocaleString());
-    const paper=generatePaperOptimized(S.content,name);
-    await client.from('papers').insert(paper);
-    $('paper-name-input').value=''; $('upload-status').textContent='✅ 试卷已生成'; refreshAll(); toast('试卷生成成功');
+    $('generate-paper-btn').disabled = true;
+    $('generate-paper-btn').textContent = '⏳ AI 正在出题...';
+    try {
+        const paper = await generatePaperOptimized(S.content, name);
+        await client.from('papers').insert(paper);
+        $('paper-name-input').value=''; $('upload-status').textContent='✅ 试卷已生成'; refreshAll(); toast('AI 试卷生成成功！');
+    } catch (e) {
+        toast('生成失败: ' + e.message, true);
+    } finally {
+        $('generate-paper-btn').disabled = false;
+        $('generate-paper-btn').textContent = '🎯 生成试卷';
+    }
 });
 
 $('begin-exam-btn').addEventListener('click', async ()=>{
