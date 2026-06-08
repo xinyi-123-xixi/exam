@@ -265,14 +265,15 @@ $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.displ
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
 // ==================== AI 出题引擎（硅基流动，已填入您的密钥） ====================
+// ==================== AI 出题引擎（优化版） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
     const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
 
-    const prompt = `你是一位资深的考试出题专家。请根据以下学习笔记的内容，生成一套完整的试卷。
+    const prompt = `你是一位专业的考试出题专家。请根据以下学习笔记的内容，生成一套完整的试卷。
 
-【试卷要求】
+【重要要求】
 1. 共20道题：7道单选题 + 7道多选题 + 6道判断题
 2. 难度适中，以基础题为主，难题控制在1-2题
 3. 题干必须清晰完整，选项要有区分度，干扰项要有迷惑性
@@ -281,28 +282,32 @@ async function generatePaperOptimized(content, paperName) {
 6. 每道题附带一句简短的解析
 
 【输出格式】
-请严格按照以下JSON格式输出，不要输出任何其他内容：
+你必须严格输出以下JSON格式，不要输出任何其他文字。注意：
+- 所有题目和选项都是完整且有意义的文字，不要使用省略号
+- 单选题选项为4个，多选题选项为5个
+- 正确选项的索引和标签必须对应
+
 {
   "questions": [
     {
       "type": "single",
-      "text": "单选题题目",
-      "options": ["A选项内容", "B选项内容", "C选项内容", "D选项内容"],
+      "text": "这是一道完整的单选题题目，内容完整，没有省略号",
+      "options": ["这是A选项的完整内容", "这是B选项的完整内容", "这是C选项的完整内容", "这是D选项的完整内容"],
       "correctIndex": 0,
       "correctLabel": "A",
       "explanation": "解析"
     },
     {
       "type": "multiple",
-      "text": "多选题题目",
-      "options": ["A","B","C","D","E"],
+      "text": "这是一道完整的多选题题目，内容完整，没有省略号",
+      "options": ["选项A的完整内容", "选项B的完整内容", "选项C的完整内容", "选项D的完整内容", "选项E的完整内容"],
       "correctIndices": [0, 2],
       "correctLabels": ["A", "C"],
       "explanation": "解析"
     },
     {
       "type": "judge",
-      "text": "判断题题目（陈述句）",
+      "text": "这是一个完整的陈述句，用于判断对错，没有省略号",
       "correctAnswer": "正确",
       "explanation": "解析"
     }
@@ -322,10 +327,10 @@ ${content.substring(0, 8000)}`;
             body: JSON.stringify({
                 model: MODEL,
                 messages: [
-                    { role: 'system', content: '你是一个专业的考试出题系统，你必须严格按照JSON格式输出，不要输出任何解释性文字。' },
+                    { role: 'system', content: '你是一个专业的考试出题系统。你必须严格按照用户要求的JSON格式输出，选项和题目必须是完整清晰的中文表述，不能使用省略号或占位符。只输出JSON，不要输出任何其他内容。' },
                     { role: 'user', content: prompt }
                 ],
-                temperature: 0.7,
+                temperature: 0.5, // 降低温度使输出更稳定
                 max_tokens: 4096
             })
         });
@@ -334,6 +339,7 @@ ${content.substring(0, 8000)}`;
 
         const data = await response.json();
         const aiOutput = data.choices[0].message.content;
+        // 清理可能包裹的代码块标记
         const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
         const result = JSON.parse(jsonStr);
 
@@ -341,17 +347,77 @@ ${content.substring(0, 8000)}`;
             throw new Error('AI 返回的题目数量不足20题');
         }
 
-        return {
+        // 修复可能存在的选项格式问题
+        result.questions = result.questions.slice(0, 20).map(q => {
+            // 确保选项是数组且不为空
+            if (!Array.isArray(q.options) || q.options.length === 0) {
+                q.options = ['选项A', '选项B', '选项C', '选项D'];
+                if (q.type === 'multiple') q.options.push('选项E');
+            }
+            return q;
+        });
+
+        const paper = {
             name: paperName,
-            questions: result.questions.slice(0, 20),
+            questions: result.questions,
             visible: true,
             created_at: new Date().toISOString()
         };
+        return paper;
     } catch (error) {
         console.error('AI 出题失败', error);
         toast('AI 出题失败，使用备用方案', true);
         return generatePaperFallback(content, paperName);
     }
+}
+
+// 备用规则出题（保持不变，但如果AI失败能兜底）
+function generatePaperFallback(content, paperName) {
+    const clean = content.replace(/[\r\n]+/g, '\n').trim();
+    const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 6);
+    const questions = [];
+    const stopWords = new Set(['的','了','在','是','我','有','和','就','不','人','都','一','一个','上','也','很','到','说','要','去','你','会','着','没有','看','好','自己','这','他','她','它','们','那','什么','怎么','如何','可以','这个','那个','因为','所以','但是','而且','然后','如果','虽然','已经','正在','将','被','把','从','对','与','或','及','等','其','其中','以及','关于','对于','通过','根据','按照','由于','为了','除了','经过']);
+    function getTerm(s) {
+        const ws = s.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—]+/).filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
+        return ws.length > 0 ? ws[0] : '关键词';
+    }
+    for (let i = 0; i < 7; i++) {
+        const s = sentences[i % sentences.length] || '相关内容';
+        const term = getTerm(s);
+        questions.push({
+            type: 'single',
+            text: `关于"${term}"，以下说法正确的是？`,
+            options: [term, `不是${term}`, `${term}的特点`, `与${term}无关`],
+            correctIndex: 0,
+            correctLabel: 'A',
+            explanation: `"${term}"是笔记中提到的关键概念。`
+        });
+    }
+    for (let i = 0; i < 7; i++) {
+        const s = sentences[(i + 7) % sentences.length] || '相关内容';
+        const term = getTerm(s);
+        const words = s.split(/[\s,，、]+/).filter(w => w.length >= 2 && w !== term).slice(0, 3);
+        const options = [...words];
+        while (options.length < 5) options.push('其他选项');
+        questions.push({
+            type: 'multiple',
+            text: `下列属于"${term}"相关描述的有？（多选）`,
+            options: options.slice(0, 5),
+            correctIndices: [0, 1],
+            correctLabels: ['A', 'B'],
+            explanation: `"${term}"的相关描述包括这些要点。`
+        });
+    }
+    for (let i = 0; i < 6; i++) {
+        const s = sentences[(i + 14) % sentences.length] || '相关内容';
+        questions.push({
+            type: 'judge',
+            text: s.length > 50 ? s.substring(0, 50) : s,
+            correctAnswer: Math.random() > 0.5 ? '正确' : '错误',
+            explanation: '请参考笔记原文。'
+        });
+    }
+    return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
 }
 
 function generatePaperFallback(content, paperName) {
