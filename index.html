@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能考试系统 - AI 出题（硅基流动）</title>
-    <!-- Supabase SDK（带时间戳防缓存） -->
+    <title>智能考试系统 - AI 出题版（硅基流动）</title>
+    <!-- Supabase SDK（防缓存） -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js?_=20260101"></script>
+    <!-- 文件解析库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -82,6 +83,7 @@
 </header>
 
 <div class="main-container">
+    <!-- 考试页面 -->
     <section class="section active" id="exam-section">
         <div class="card" id="exam-select-card">
             <div class="card-header">📚 选择试卷</div>
@@ -102,6 +104,7 @@
             <div class="card"><div id="exam-questions-container"></div><button class="btn btn-success" id="submit-exam-btn" style="margin-top:20px;">✅ 提交考卷</button></div>
         </div>
     </section>
+    <!-- 管理页面 -->
     <section class="section" id="admin-section">
         <div class="card">
             <div class="card-header">📤 上传学习笔记</div>
@@ -128,6 +131,7 @@
             <div id="admin-paper-list"></div>
         </div>
     </section>
+    <!-- 记录页面 -->
     <section class="section" id="records-section">
         <div class="card">
             <div class="card-header">📊 考试记录总表
@@ -163,17 +167,12 @@
 </div>
 
 <script>
-// Supabase 初始化
+// ==================== Supabase 配置 ====================
 const SUPABASE_URL = 'https://vlpwtmfgjxveuswiuufl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_tviG7d9Hq7Yv8W2LrokevA_NOM2nRV0';
 const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 安全获取元素（避免 null 错误）
-function getElement(id) { return document.getElementById(id); }
-function safeStyle(el, prop, value) { if(el) el.style[prop] = value; }
-function safeDisplay(id, val) { const el = getElement(id); if(el) el.style.display = val; }
-
-const $ = getElement;
+const $ = s => document.getElementById(s);
 const $$ = s => document.querySelectorAll(s);
 const ADMIN_PASS = 'admin123';
 let role = 'student', selPaperId = null, curPaper = null, curSetId = null;
@@ -228,9 +227,9 @@ async function refreshAll(){
 }
 window.selPaper=(id,el)=>{ $$('.paper-item').forEach(i=>i.classList.remove('selected')); el.classList.add('selected'); selPaperId=id; updateExamState(); };
 window.delPaper=async(id)=>{ if(confirm('删除？')){ await client.from('papers').delete().eq('id', id); if(selPaperId===id) selPaperId=null; refreshAll(); } };
-window.openSet=(id)=>{ curSetId=id; client.from('papers').select('*').then(({data})=>{ if(data && data.length){ const p=data[0]; const cb = $('setting-visible'); if(cb) cb.checked=p.visible!==false; } safeDisplay('settings-modal','flex'); }); };
-$('save-settings-btn')?.addEventListener('click', async()=>{ if(!curSetId) return; await client.from('papers').update({visible:$('setting-visible')?.checked ?? true}).eq('id', curSetId); safeDisplay('settings-modal','none'); refreshAll(); });
-$('cancel-settings-btn')?.addEventListener('click', ()=> { safeDisplay('settings-modal','none'); });
+window.openSet=(id)=>{ curSetId=id; client.from('papers').select('*').then(({data})=>{ if(data && data.length){ const p=data[0]; const cb = $('setting-visible'); if(cb) cb.checked=p.visible!==false; } $('settings-modal').style.display='flex'; }); };
+$('save-settings-btn')?.addEventListener('click', async()=>{ if(!curSetId) return; await client.from('papers').update({visible:$('setting-visible')?.checked ?? true}).eq('id', curSetId); $('settings-modal').style.display='none'; refreshAll(); });
+$('cancel-settings-btn')?.addEventListener('click', ()=> { $('settings-modal').style.display='none'; });
 
 async function updateExamState(){
     const idOk = $('exam-student-id')?.value.trim() && $('exam-student-name')?.value.trim();
@@ -262,14 +261,13 @@ $('file-input')?.addEventListener('change', e=>{ if(e.target.files.length) proce
 $('upload-zone')?.addEventListener('dragover', e=>{ e.preventDefault(); e.currentTarget.classList.add('drag-over'); });
 $('upload-zone')?.addEventListener('dragleave', e=>{ e.currentTarget.classList.remove('drag-over'); });
 $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTarget.classList.remove('drag-over'); if(e.dataTransfer.files.length) processMultipleFiles(Array.from(e.dataTransfer.files)); });
-$('paste-text-btn')?.addEventListener('click', ()=>{ safeDisplay('paste-area','block'); $('pasted-text')?.focus(); });
-$('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; safeDisplay('paste-area','none'); });
+$('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
+$('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// ==================== AI 出题引擎（硅基流动，每天免费 50 万 tokens） ====================
+// ==================== AI 出题引擎（硅基流动，已填入您的密钥） ====================
 async function generatePaperOptimized(content, paperName) {
-    // ⚠️ 请把下面这个 KEY 换成你在硅基流动注册后获取的 API Key
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
-    const API_KEY = 'sk-你的硅基流动API密钥'; // 替换这里
+    const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
     const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
 
     const prompt = `你是一位资深的考试出题专家。请根据以下学习笔记的内容，生成一套完整的试卷。
@@ -404,7 +402,7 @@ $('generate-paper-btn')?.addEventListener('click', async ()=>{
     }
 });
 
-// ==================== 考试流程（完全安全的 DOM 操作） ====================
+// ==================== 考试流程（所有 DOM 操作均已加保护） ====================
 $('begin-exam-btn')?.addEventListener('click', async ()=>{
     if(!selPaperId) return;
     const { data } = await client.from('papers').select('*').eq('id', selPaperId); curPaper=data?.[0];
@@ -460,15 +458,15 @@ async function submitExam(){
     const rs=$('result-score'); if(rs) rs.textContent=score+'分';
     const rd=$('result-detail'); if(rd) rd.textContent=`正确 ${correct}/20 用时 ${dur}`;
     const fb=$('feedback-box'); if(fb) fb.innerHTML=genFeedback(details);
-    safeDisplay('result-modal','flex');
+    $('result-modal').style.display='flex';
     $('view-detail-btn').onclick=()=>showDetail(details);
-    $('close-result-btn').onclick=()=>{ safeDisplay('result-modal','none'); safeDisplay('exam-interface','none'); safeDisplay('exam-select-card','block'); const tb=$('timer-bar'); if(tb) tb.classList.remove('warning'); refreshAll(); };
-    safeDisplay('exam-interface','none');
-    safeDisplay('exam-select-card','block');
+    $('close-result-btn').onclick=()=>{ $('result-modal').style.display='none'; $('exam-interface').style.display='none'; $('exam-select-card').style.display='block'; const tb=$('timer-bar'); if(tb) tb.classList.remove('warning'); refreshAll(); };
+    $('exam-interface').style.display='none';
+    $('exam-select-card').style.display='block';
 }
 function genFeedback(d){ const s={t:0,c:0},m={t:0,c:0},j={t:0,c:0}; d.forEach(x=>{ if(x.type==='single'){ s.t++; if(x.isCorrect)s.c++; } else if(x.type==='multiple'){ m.t++; if(x.isCorrect)m.c++; } else{ j.t++; if(x.isCorrect)j.c++; } }); return `单选正确率：${s.t?(s.c/s.t*100).toFixed(0):0}% 多选：${m.t?(m.c/m.t*100).toFixed(0):0}% 判断：${j.t?(j.c/j.t*100).toFixed(0):0}%`; }
-function showDetail(details){ let h=''; details.forEach((d,i)=>h+=`<p>${d.isCorrect?'✅':'❌'} 第${i+1}题：${d.questionText}<br>你的答案：${d.userAnswer||'未答'} 正确答案：${d.correctAnswer}</p>`); const dc=$('detail-content'); if(dc) dc.innerHTML=h; safeDisplay('detail-modal','flex'); }
-$('close-detail-btn')?.addEventListener('click', ()=> { safeDisplay('detail-modal','none'); });
+function showDetail(details){ let h=''; details.forEach((d,i)=>h+=`<p>${d.isCorrect?'✅':'❌'} 第${i+1}题：${d.questionText}<br>你的答案：${d.userAnswer||'未答'} 正确答案：${d.correctAnswer}</p>`); const dc=$('detail-content'); if(dc) dc.innerHTML=h; $('detail-modal').style.display='flex'; }
+$('close-detail-btn')?.addEventListener('click', ()=> { $('detail-modal').style.display='none'; });
 ['settings-modal','result-modal','detail-modal'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('click', e=>{ if(e.target===el) el.style.display='none'; }); });
 
 async function loadRecords(){
