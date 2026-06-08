@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能考试系统 - AI 出题修复版</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <title>智能考试系统 - AI 出题（硅基流动）</title>
+    <!-- Supabase SDK（带时间戳防缓存） -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js?_=20260101"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -162,12 +163,17 @@
 </div>
 
 <script>
-// Supabase 配置
+// Supabase 初始化
 const SUPABASE_URL = 'https://vlpwtmfgjxveuswiuufl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_tviG7d9Hq7Yv8W2LrokevA_NOM2nRV0';
 const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const $ = s => document.getElementById(s);
+// 安全获取元素（避免 null 错误）
+function getElement(id) { return document.getElementById(id); }
+function safeStyle(el, prop, value) { if(el) el.style[prop] = value; }
+function safeDisplay(id, val) { const el = getElement(id); if(el) el.style.display = val; }
+
+const $ = getElement;
 const $$ = s => document.querySelectorAll(s);
 const ADMIN_PASS = 'admin123';
 let role = 'student', selPaperId = null, curPaper = null, curSetId = null;
@@ -222,9 +228,9 @@ async function refreshAll(){
 }
 window.selPaper=(id,el)=>{ $$('.paper-item').forEach(i=>i.classList.remove('selected')); el.classList.add('selected'); selPaperId=id; updateExamState(); };
 window.delPaper=async(id)=>{ if(confirm('删除？')){ await client.from('papers').delete().eq('id', id); if(selPaperId===id) selPaperId=null; refreshAll(); } };
-window.openSet=(id)=>{ curSetId=id; client.from('papers').select('*').then(({data})=>{ if(data && data.length){ const p=data[0]; $('setting-visible').checked=p.visible!==false; } $('settings-modal').style.display='flex'; }); };
-$('save-settings-btn')?.addEventListener('click', async()=>{ if(!curSetId) return; await client.from('papers').update({visible:$('setting-visible').checked}).eq('id', curSetId); $('settings-modal').style.display='none'; refreshAll(); });
-$('cancel-settings-btn')?.addEventListener('click', ()=> { const m = $('settings-modal'); if(m) m.style.display='none'; });
+window.openSet=(id)=>{ curSetId=id; client.from('papers').select('*').then(({data})=>{ if(data && data.length){ const p=data[0]; const cb = $('setting-visible'); if(cb) cb.checked=p.visible!==false; } safeDisplay('settings-modal','flex'); }); };
+$('save-settings-btn')?.addEventListener('click', async()=>{ if(!curSetId) return; await client.from('papers').update({visible:$('setting-visible')?.checked ?? true}).eq('id', curSetId); safeDisplay('settings-modal','none'); refreshAll(); });
+$('cancel-settings-btn')?.addEventListener('click', ()=> { safeDisplay('settings-modal','none'); });
 
 async function updateExamState(){
     const idOk = $('exam-student-id')?.value.trim() && $('exam-student-name')?.value.trim();
@@ -256,13 +262,16 @@ $('file-input')?.addEventListener('change', e=>{ if(e.target.files.length) proce
 $('upload-zone')?.addEventListener('dragover', e=>{ e.preventDefault(); e.currentTarget.classList.add('drag-over'); });
 $('upload-zone')?.addEventListener('dragleave', e=>{ e.currentTarget.classList.remove('drag-over'); });
 $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTarget.classList.remove('drag-over'); if(e.dataTransfer.files.length) processMultipleFiles(Array.from(e.dataTransfer.files)); });
-$('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
-$('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
+$('paste-text-btn')?.addEventListener('click', ()=>{ safeDisplay('paste-area','block'); $('pasted-text')?.focus(); });
+$('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; safeDisplay('paste-area','none'); });
 
-// ==================== AI 出题引擎 (DeepSeek) ====================
+// ==================== AI 出题引擎（硅基流动，每天免费 50 万 tokens） ====================
 async function generatePaperOptimized(content, paperName) {
-    const DEEPSEEK_API_KEY = 'sk-4ba0bb80b2df4d98aaed402f17922ab2';
-    const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+    // ⚠️ 请把下面这个 KEY 换成你在硅基流动注册后获取的 API Key
+    const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
+    const API_KEY = 'sk-你的硅基流动API密钥'; // 替换这里
+    const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
+
     const prompt = `你是一位资深的考试出题专家。请根据以下学习笔记的内容，生成一套完整的试卷。
 
 【试卷要求】
@@ -306,14 +315,14 @@ async function generatePaperOptimized(content, paperName) {
 ${content.substring(0, 8000)}`;
 
     try {
-        const response = await fetch(DEEPSEEK_API_URL, {
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+                'Authorization': `Bearer ${API_KEY}`
             },
             body: JSON.stringify({
-                model: 'deepseek-chat',
+                model: MODEL,
                 messages: [
                     { role: 'system', content: '你是一个专业的考试出题系统，你必须严格按照JSON格式输出，不要输出任何解释性文字。' },
                     { role: 'user', content: prompt }
@@ -322,14 +331,24 @@ ${content.substring(0, 8000)}`;
                 max_tokens: 4096
             })
         });
+
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
         const data = await response.json();
-        if (!data.choices || !data.choices[0]) throw new Error('API 返回异常，可能额度不足');
         const aiOutput = data.choices[0].message.content;
         const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
         const result = JSON.parse(jsonStr);
-        if (!result.questions || result.questions.length < 20) throw new Error('题目数量不足');
-        return { name: paperName, questions: result.questions.slice(0, 20), visible: true, created_at: new Date().toISOString() };
+
+        if (!result.questions || result.questions.length < 20) {
+            throw new Error('AI 返回的题目数量不足20题');
+        }
+
+        return {
+            name: paperName,
+            questions: result.questions.slice(0, 20),
+            visible: true,
+            created_at: new Date().toISOString()
+        };
     } catch (error) {
         console.error('AI 出题失败', error);
         toast('AI 出题失败，使用备用方案', true);
@@ -385,16 +404,19 @@ $('generate-paper-btn')?.addEventListener('click', async ()=>{
     }
 });
 
-// 考试流程
+// ==================== 考试流程（完全安全的 DOM 操作） ====================
 $('begin-exam-btn')?.addEventListener('click', async ()=>{
     if(!selPaperId) return;
     const { data } = await client.from('papers').select('*').eq('id', selPaperId); curPaper=data?.[0];
     if(!curPaper) return;
     S.sid=$('exam-student-id')?.value.trim(); S.sname=$('exam-student-name')?.value.trim();
     S.left=1800; S.vc=0; S.answers=[]; S.start=new Date(); S.inExam=true;
-    const examSelect = $('exam-select-card'); const examUI = $('exam-interface');
+
+    const examSelect = $('exam-select-card');
+    const examUI = $('exam-interface');
     if(examSelect) examSelect.style.display='none';
     if(examUI) examUI.style.display='block';
+
     const timerEl = $('timer-display'); if(timerEl) timerEl.textContent=fmt(S.left);
     const violEl = $('violation-display'); if(violEl) violEl.textContent='违规:0';
     const infoEl = $('exam-info-display'); if(infoEl) infoEl.textContent=`${S.sid} ${S.sname} | ${curPaper.name}`;
@@ -403,6 +425,7 @@ $('begin-exam-btn')?.addEventListener('click', async ()=>{
     document.addEventListener('visibilitychange', ()=>{ if(document.hidden&&S.inExam){ S.vc++; const v=$('violation-display'); if(v) v.textContent='违规:'+S.vc; } });
     window.addEventListener('blur', ()=>{ if(S.inExam){ S.vc++; const v=$('violation-display'); if(v) v.textContent='违规:'+S.vc; } });
 });
+
 function renderQuestions(){
     const container = $('exam-questions-container'); if(!container) return;
     let html=''; curPaper.questions.forEach((q,idx)=>{
@@ -417,7 +440,9 @@ function renderQuestions(){
 function setS(i,v){ S.answers[i]=v; }
 function setM(i,v,c){ if(!Array.isArray(S.answers[i])) S.answers[i]=[]; if(c) S.answers[i].push(v); else S.answers[i]=S.answers[i].filter(x=>x!==v); }
 function setJ(i,v){ S.answers[i]=v; }
+
 $('submit-exam-btn')?.addEventListener('click', ()=>{ if(S.inExam) submitExam(); });
+
 async function submitExam(){
     clearInterval(S.timer); S.inExam=false;
     let correct=0; const details=[];
@@ -435,15 +460,15 @@ async function submitExam(){
     const rs=$('result-score'); if(rs) rs.textContent=score+'分';
     const rd=$('result-detail'); if(rd) rd.textContent=`正确 ${correct}/20 用时 ${dur}`;
     const fb=$('feedback-box'); if(fb) fb.innerHTML=genFeedback(details);
-    $('result-modal').style.display='flex';
+    safeDisplay('result-modal','flex');
     $('view-detail-btn').onclick=()=>showDetail(details);
-    $('close-result-btn').onclick=()=>{ $('result-modal').style.display='none'; const ei=$('exam-interface'); if(ei) ei.style.display='none'; const esc=$('exam-select-card'); if(esc) esc.style.display='block'; const tb=$('timer-bar'); if(tb) tb.classList.remove('warning'); refreshAll(); };
-    const ei=$('exam-interface'); if(ei) ei.style.display='none';
-    const esc=$('exam-select-card'); if(esc) esc.style.display='block';
+    $('close-result-btn').onclick=()=>{ safeDisplay('result-modal','none'); safeDisplay('exam-interface','none'); safeDisplay('exam-select-card','block'); const tb=$('timer-bar'); if(tb) tb.classList.remove('warning'); refreshAll(); };
+    safeDisplay('exam-interface','none');
+    safeDisplay('exam-select-card','block');
 }
 function genFeedback(d){ const s={t:0,c:0},m={t:0,c:0},j={t:0,c:0}; d.forEach(x=>{ if(x.type==='single'){ s.t++; if(x.isCorrect)s.c++; } else if(x.type==='multiple'){ m.t++; if(x.isCorrect)m.c++; } else{ j.t++; if(x.isCorrect)j.c++; } }); return `单选正确率：${s.t?(s.c/s.t*100).toFixed(0):0}% 多选：${m.t?(m.c/m.t*100).toFixed(0):0}% 判断：${j.t?(j.c/j.t*100).toFixed(0):0}%`; }
-function showDetail(details){ let h=''; details.forEach((d,i)=>h+=`<p>${d.isCorrect?'✅':'❌'} 第${i+1}题：${d.questionText}<br>你的答案：${d.userAnswer||'未答'} 正确答案：${d.correctAnswer}</p>`); const dc=$('detail-content'); if(dc) dc.innerHTML=h; $('detail-modal').style.display='flex'; }
-$('close-detail-btn')?.addEventListener('click', ()=> { const dm=$('detail-modal'); if(dm) dm.style.display='none'; });
+function showDetail(details){ let h=''; details.forEach((d,i)=>h+=`<p>${d.isCorrect?'✅':'❌'} 第${i+1}题：${d.questionText}<br>你的答案：${d.userAnswer||'未答'} 正确答案：${d.correctAnswer}</p>`); const dc=$('detail-content'); if(dc) dc.innerHTML=h; safeDisplay('detail-modal','flex'); }
+$('close-detail-btn')?.addEventListener('click', ()=> { safeDisplay('detail-modal','none'); });
 ['settings-modal','result-modal','detail-modal'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('click', e=>{ if(e.target===el) el.style.display='none'; }); });
 
 async function loadRecords(){
