@@ -340,30 +340,77 @@ function setJ(i,v){ S.answers[i]=v; }
 
 $('submit-exam-btn')?.addEventListener('click', ()=>{ if(S.inExam) submitExam(); });
 
-async function submitExam(){
-    clearInterval(S.timer); S.inExam = false;
+async function submitExam() {
+    clearInterval(S.timer);
+    S.inExam = false;
     if (!curPaper) return;
-    let correct = 0; const details = [];
+
+    // 计算成绩
+    let correct = 0;
+    const details = [];
     curPaper.questions.forEach((q, idx) => {
-        const ua = S.answers[idx]; let ok = false;
+        const ua = S.answers[idx];
+        let ok = false;
         if (q.type === 'single') ok = (ua === q.correctLabel);
-        else if (q.type === 'multiple') { const u = Array.isArray(ua) ? ua.sort() : []; const c = (q.correctLabels || []).sort(); ok = JSON.stringify(u) === JSON.stringify(c); }
-        else ok = (ua === q.correctAnswer);
+        else if (q.type === 'multiple') {
+            const u = Array.isArray(ua) ? ua.sort() : [];
+            const c = (q.correctLabels || []).sort();
+            ok = JSON.stringify(u) === JSON.stringify(c);
+        } else ok = (ua === q.correctAnswer);
         if (ok) correct++;
-        details.push({ type: q.type, questionText: q.text, userAnswer: ua, correctAnswer: q.correctAnswer || q.correctLabels, isCorrect: ok, explanation: q.explanation });
+        details.push({
+            type: q.type,
+            questionText: q.text,
+            userAnswer: ua,
+            correctAnswer: q.correctAnswer || q.correctLabels,
+            isCorrect: ok,
+            explanation: q.explanation
+        });
     });
+
     const dur = fmt(Math.min(Math.round((new Date() - S.start) / 1000), 1800));
     const score = correct * 5;
+
+    // 构建记录对象（确保字段名与数据库完全一致）
+    const record = {
+        paper_id: selPaperId,
+        student_id: S.sid,
+        student_name: S.sname,
+        score: score,
+        correct_count: correct,
+        total_questions: 20,
+        violations: S.vc,
+        duration: dur,
+        details: details,           // JSONB 直接传入数组
+        exam_date: new Date().toISOString(),
+        paper_name: curPaper.name
+    };
+
     try {
-        const { error } = await client.from('records').insert({ paper_id: selPaperId, student_id: S.sid, student_name: S.sname, score, correct_count: correct, total_questions: 20, violations: S.vc, duration: dur, details, exam_date: new Date().toISOString(), paper_name: curPaper.name });
-        if (error) throw error;
+        const { error } = await client.from('records').insert(record);
+        if (error) {
+            console.error('插入失败详情:', error);
+            throw new Error(error.message || '未知错误');
+        }
         toast('考试记录已保存');
-    } catch (e) { console.error('记录保存失败', e); toast('记录保存失败，请检查数据库权限', true); }
+    } catch (e) {
+        console.error('记录保存失败', e);
+        toast('记录保存失败: ' + e.message, true);
+        // 即使保存失败，也不允许再考试（已消耗试卷）
+        // 但为了安全，我们仍然强制禁用按钮
+        refreshAll();
+        return;
+    }
+
+    // 显示成绩弹窗
     const rs = $('result-score'); if(rs) rs.textContent = score + '分';
     const rd = $('result-detail'); if(rd) rd.textContent = `正确 ${correct}/20 | 用时 ${dur}`;
     const fb = $('feedback-box'); if(fb) fb.innerHTML = genFeedback(details);
     const rm = $('result-modal'); if(rm) rm.style.display = 'flex';
-    const vdb = $('view-detail-btn'); if(vdb) vdb.onclick = () => showDetail(details);
+
+    const vdb = $('view-detail-btn');
+    if(vdb) vdb.onclick = () => showDetail(details);
+
     const crb = $('close-result-btn');
     if(crb) crb.onclick = () => {
         const rm2 = $('result-modal'); if(rm2) rm2.style.display = 'none';
@@ -375,6 +422,7 @@ async function submitExam(){
         refreshAll();
         if (role === 'admin' && $('records-section')?.classList.contains('active')) loadRecords();
     };
+
     const ei = $('exam-interface'); if(ei) ei.style.display = 'none';
     const esc = $('exam-select-card'); if(esc) esc.style.display = 'block';
     const tb = $('timer-bar'); if(tb) tb.classList.remove('warning');
