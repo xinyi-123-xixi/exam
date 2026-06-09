@@ -257,6 +257,23 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
+function extractKeyPoints(rawText) {
+    const clean = rawText.replace(/[\r\n]+/g, '\n').replace(/[　 ]+/g, ' ').trim();
+    const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 6);
+    const stopWords = new Set(['的','了','在','是','我','有','和','就','不','人','都','一','一个','上','也','很','到','说','要','去','你','会','着','没有','看','好','自己','这','他','她','它','们','那','什么','怎么','如何','可以','这个','那个','因为','所以','但是','而且','然后','如果','虽然','已经','正在','将','被','把','从','对','与','或','及','等','其','其中','以及','关于','对于','通过','根据','按照','由于','为了','除了','经过']);
+    
+    const scored = sentences.map(s => {
+        const words = s.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—]+/).filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
+        let score = 0;
+        if (/(是|指|称|即|定义为|属于|分为|包括|特征|特点|性质|步骤|流程|因为|所以|因此)/.test(s)) score += 3;
+        if (/\d/.test(s)) score += 2;
+        score += Math.min(words.length, 5);
+        return { sentence: s, score };
+    });
+    
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 40).map(item => item.sentence).join('。\n');
+}
 // ==================== AI 出题引擎（7B稳定版 + 强化备用方案） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
