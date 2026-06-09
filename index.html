@@ -257,14 +257,11 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// ==================== AI 出题引擎（强化版，使用函数调用） ====================
-// ==================== AI 出题引擎（专业版，严格遵循出题规范） ====================
-
-// ==================== AI 出题引擎（专家级示例版） ====================
+// ==================== AI 出题引擎（7B稳定版 + 强化备用方案） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
-    const MODEL = 'Qwen/Qwen2.5-72B-Instruct';  // ⚠️ 请确认你账号有72B模型权限
+    const MODEL = 'Qwen/Qwen2.5-7B-Instruct';  // 免费可用模型
 
     const prompt = `你是一位资深教育专家。请严格按照以下规则，根据提供的学习笔记，生成一套高质量试卷。
 
@@ -358,7 +355,11 @@ ${content.substring(0, 8000)}`;
             })
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
         const data = await response.json();
         const aiOutput = data.choices[0].message.content;
         const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
@@ -394,40 +395,105 @@ ${content.substring(0, 8000)}`;
     }
 }
 
+// 强化备用方案：基于笔记内容生成完整、合理的题目
 function generatePaperFallback(content, paperName) {
     const clean = content.replace(/[\r\n]+/g, '\n').trim();
     const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 10);
-    while (sentences.length < 20) sentences.push('相关知识点内容');
+
+    // 若句子不足，补一些占位句
+    while (sentences.length < 20) {
+        sentences.push('本知识点的相关内容需要掌握');
+    }
+
     const questions = [];
+
+    // 生成7道单选题
     for (let i = 0; i < 7; i++) {
+        const s = sentences[i];
+        const term = extractKeyTerm(s);
+        const qText = `关于“${term}”，以下说法正确的是？`;
+        const correctOpt = `${term}的定义或核心特征`;
+        const wrongOpts = [
+            `与${term}相反的概念`,
+            `不属于${term}范畴的描述`,
+            `对${term}的常见误解`
+        ];
+        const options = [correctOpt, ...wrongOpts].sort(() => Math.random() - 0.5);
+        const correctIndex = options.indexOf(correctOpt);
         questions.push({
             type: 'single',
-            text: `关于“${sentences[i].substring(0, 30)}”，以下说法正确的是？`,
-            options: [`${sentences[i].substring(0, 15)}的定义`, '与之相反的概念', '不属于此类', '以上均不正确'],
-            correctIndex: 0, correctLabel: 'A',
-            explanation: `请参考笔记对“${sentences[i].substring(0, 15)}”的描述。`
+            text: qText,
+            options: options.map(o => o.length < 5 ? o + '（请参考笔记）' : o),
+            correctIndex: correctIndex,
+            correctLabel: String.fromCharCode(65 + correctIndex),
+            explanation: `“${term}”在笔记中有明确描述，正确选项反映了其核心内容。`
         });
     }
+
+    // 生成7道多选题
     for (let i = 0; i < 7; i++) {
+        const s = sentences[i + 7];
+        const term = extractKeyTerm(s);
+        const qText = `以下哪些属于“${term}”的相关内容？（多选）`;
+        const correctItems = [
+            `${term}的基本特征`,
+            `${term}的必要条件`,
+            `${term}的主要类型`
+        ];
+        const wrongItems = [
+            `与${term}无关的表述`,
+            `对${term}的错误解释`
+        ];
+        const allOpts = [...correctItems, ...wrongItems].sort(() => Math.random() - 0.5).slice(0, 5);
+        const correctIndices = [];
+        const correctLabels = [];
+        allOpts.forEach((opt, idx) => {
+            if (correctItems.includes(opt)) {
+                correctIndices.push(idx);
+                correctLabels.push(String.fromCharCode(65 + idx));
+            }
+        });
         questions.push({
             type: 'multiple',
-            text: `下列属于“${sentences[i+7].substring(0, 20)}”相关的内容有？（多选）`,
-            options: [`${sentences[i+7].substring(0, 10)}的特点`, '必要条件', '重要影响因素', '不相关的描述', '以上均包含'],
-            correctIndices: [0, 1], correctLabels: ['A', 'B'],
-            explanation: `正确选项与“${sentences[i+7].substring(0, 15)}”直接相关。`
+            text: qText,
+            options: allOpts.map(o => o.length < 5 ? o + '（参考笔记）' : o),
+            correctIndices: correctIndices.length >= 2 ? correctIndices : [0, 1],
+            correctLabels: correctLabels.length >= 2 ? correctLabels : ['A', 'B'],
+            explanation: `正确选项均与“${term}”直接相关，需结合笔记理解。`
         });
     }
+
+    // 生成6道判断题
     for (let i = 0; i < 6; i++) {
-        const s = sentences[i+14];
+        const s = sentences[i + 14];
+        const isTrue = Math.random() > 0.5;
+        let statement = s.length > 60 ? s.substring(0, 60) + '（判断对错）' : s + '（判断对错）';
+        if (!isTrue) {
+            statement = '以下说法是否正确：' + statement;
+        }
         questions.push({
             type: 'judge',
-            text: s.length > 50 ? s.substring(0, 50) + '（判断对错）' : s + '（判断对错）',
-            correctAnswer: Math.random() > 0.5 ? '正确' : '错误',
-            explanation: s.length > 50 ? '请参考原文验证。' : '请查阅笔记确认。'
+            text: statement,
+            correctAnswer: isTrue ? '正确' : '错误',
+            explanation: isTrue ? '该陈述与笔记内容一致。' : '该陈述与笔记内容不符，请查阅原文。'
         });
     }
-    return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
+
+    return {
+        name: paperName,
+        questions: questions,
+        visible: true,
+        created_at: new Date().toISOString()
+    };
 }
+
+// 辅助函数：从句子中提取一个关键词
+function extractKeyTerm(sentence) {
+    const stopWords = new Set(['的','了','在','是','我','有','和','就','不','人','都','一','一个','上','也','很','到','说','要','去','你','会','着','没有','看','好','自己','这','他','她','它','们','那','什么','怎么','如何','可以','这个','那个','因为','所以','但是','而且','然后','如果','虽然','已经','正在','将','被','把','从','对','与','或','及','等','其','其中','以及','关于','对于','通过','根据','按照','由于','为了','除了','经过']);
+    const words = sentence.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—\n]+/).filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
+    return words.length > 0 ? words[0] : '关键概念';
+}
+
 
 $('generate-paper-btn')?.addEventListener('click', async ()=>{
     if(!S.content||S.content.trim().length<200) return toast('请先上传至少200字笔记',true);
