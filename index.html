@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能考试系统 - 完整修复版</title>
+    <title>智能考试系统 - 恢复完整出题</title>
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js?_=20260101"></script>
     <!-- 文件解析库 -->
@@ -82,7 +82,6 @@
 </header>
 
 <div class="main-container">
-    <!-- 考试页面 -->
     <section class="section active" id="exam-section">
         <div class="card" id="exam-select-card">
             <div class="card-header">📚 选择试卷</div>
@@ -103,7 +102,6 @@
             <div class="card"><div id="exam-questions-container"></div><button class="btn btn-success" id="submit-exam-btn" style="margin-top:20px;">✅ 提交考卷</button></div>
         </div>
     </section>
-    <!-- 管理页面 -->
     <section class="section" id="admin-section">
         <div class="card">
             <div class="card-header">📤 上传学习笔记</div>
@@ -130,7 +128,6 @@
             <div id="admin-paper-list"></div>
         </div>
     </section>
-    <!-- 记录页面 -->
     <section class="section" id="records-section">
         <div class="card">
             <div class="card-header">📊 考试记录总表
@@ -261,35 +258,12 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// ==================== 辅助函数 ====================
-function extractKeyPoints(rawText) {
-    const clean = rawText.replace(/[\r\n]+/g, '\n').replace(/[　 ]+/g, ' ').trim();
-    const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 6);
-    const stopWords = new Set(['的','了','在','是','我','有','和','就','不','人','都','一','一个','上','也','很','到','说','要','去','你','会','着','没有','看','好','自己','这','他','她','它','们','那','什么','怎么','如何','可以','这个','那个','因为','所以','但是','而且','然后','如果','虽然','已经','正在','将','被','把','从','对','与','或','及','等','其','其中','以及','关于','对于','通过','根据','按照','由于','为了','除了','经过']);
-    const scored = sentences.map(s => {
-        const words = s.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—]+/).filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
-        let score = 0;
-        if (/(是|指|称|即|定义为|属于|分为|包括|特征|特点|性质|步骤|流程|因为|所以|因此)/.test(s)) score += 3;
-        if (/\d/.test(s)) score += 2;
-        score += Math.min(words.length, 5);
-        return { sentence: s, score };
-    });
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, 40).map(item => item.sentence).join('。\n');
-}
-
-function extractKeyTerm(sentence) {
-    const stopWords = new Set(['的','了','在','是','我','有','和','就','不','人','都','一','一个','上','也','很','到','说','要','去','你','会','着','没有','看','好','自己','这','他','她','它','们','那','什么','怎么','如何','可以','这个','那个','因为','所以','但是','而且','然后','如果','虽然','已经','正在','将','被','把','从','对','与','或','及','等','其','其中','以及','关于','对于','通过','根据','按照','由于','为了','除了','经过']);
-    const words = sentence.split(/[\s,，、。！？.!?;；:：()（）\[\]【】"“”'‘’\-\—\n]+/).filter(w => w.length >= 2 && !stopWords.has(w.toLowerCase()));
-    return words.length > 0 ? words[0] : '关键概念';
-}
-
-// ==================== AI 出题引擎（安全拼接） ====================
+// ==================== AI 出题引擎（使用完整笔记，不截断关键点） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
     const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
-    const keyPoints = extractKeyPoints(content);
+
     const prompt = `你是一位资深教育专家。请严格按照以下规则，根据提供的学习笔记，生成一套高质量试卷。
 
 【通用规则】
@@ -365,7 +339,7 @@ async function generatePaperOptimized(content, paperName) {
 }
 
 【学习笔记内容】
-${keyPoints}`;
+${content.substring(0, 8000)}`;
 
     try {
         const response = await fetch(API_URL, {
@@ -425,35 +399,34 @@ ${keyPoints}`;
 }
 
 function generatePaperFallback(content, paperName) {
-    const keyPoints = extractKeyPoints(content);
-    const sentences = keyPoints.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 6);
+    const sentences = content.replace(/[\r\n]+/g, '\n').split(/[。！？.!?\n]+/).filter(s => s.trim().length > 10);
     while (sentences.length < 20) sentences.push('本知识点需要掌握核心概念与特征');
     const questions = [];
     for (let i = 0; i < 7; i++) {
-        const s = sentences[i]; const term = extractKeyTerm(s);
+        const s = sentences[i]; const term = s.substring(0, 10);
         const qText = '关于“' + term + '”，以下说法正确的是？';
-        const correctOpt = term + '的定义或核心特征';
-        const wrongOpts = ['与' + term + '相反的概念', '不属于' + term + '范畴的描述', '对' + term + '的常见误解'];
+        const correctOpt = term + '的相关定义';
+        const wrongOpts = ['与' + term + '相反的概念', '不属于此范畴', '常见误解'];
         const options = [correctOpt, ...wrongOpts].sort(() => Math.random() - 0.5);
         const correctIndex = options.indexOf(correctOpt);
-        questions.push({ type:'single', text:qText, options:options.map(o => o.length < 5 ? o + '（请参考笔记）' : o), correctIndex:correctIndex, correctLabel:String.fromCharCode(65 + correctIndex), explanation:'“' + term + '”在笔记中有明确描述。' });
+        questions.push({ type:'single', text:qText, options:options.map(o => o.length < 5 ? o + '（请参考笔记）' : o), correctIndex:correctIndex, correctLabel:String.fromCharCode(65 + correctIndex), explanation:'请参考笔记原文。' });
     }
     for (let i = 0; i < 7; i++) {
-        const s = sentences[i+7]; const term = extractKeyTerm(s);
+        const s = sentences[i+7]; const term = s.substring(0, 10);
         const qText = '以下哪些属于“' + term + '”的相关内容？（多选）';
-        const correctItems = [term+'的基本特征', term+'的必要条件', term+'的主要类型'];
-        const wrongItems = ['与'+term+'无关的表述', '对'+term+'的错误解释'];
+        const correctItems = [term+'的特点', term+'的条件', term+'的类型'];
+        const wrongItems = ['无关表述', '错误解释'];
         const allOpts = [...correctItems, ...wrongItems].sort(() => Math.random() - 0.5).slice(0,5);
         const correctIndices = [], correctLabels = [];
         allOpts.forEach((opt, idx) => { if(correctItems.includes(opt)) { correctIndices.push(idx); correctLabels.push(String.fromCharCode(65+idx)); } });
-        questions.push({ type:'multiple', text:qText, options:allOpts.map(o => o.length < 5 ? o + '（参考笔记）' : o), correctIndices:correctIndices.length >= 2 ? correctIndices : [0,1], correctLabels:correctLabels.length >= 2 ? correctLabels : ['A','B'], explanation:'正确选项均与“'+term+'”直接相关。' });
+        questions.push({ type:'multiple', text:qText, options:allOpts.map(o => o.length < 5 ? o + '（参考笔记）' : o), correctIndices:correctIndices.length >= 2 ? correctIndices : [0,1], correctLabels:correctLabels.length >= 2 ? correctLabels : ['A','B'], explanation:'请参考笔记。' });
     }
     for (let i = 0; i < 6; i++) {
         const s = sentences[i+14];
         const isTrue = Math.random() > 0.5;
         let statement = s.length > 60 ? s.substring(0, 60) + '（判断对错）' : s + '（判断对错）';
         if (!isTrue) statement = '以下说法是否正确：' + statement;
-        questions.push({ type:'judge', text:statement, correctAnswer:isTrue?'正确':'错误', explanation:isTrue?'该陈述与笔记内容一致。':'该陈述与笔记内容不符。' });
+        questions.push({ type:'judge', text:statement, correctAnswer:isTrue?'正确':'错误', explanation:isTrue?'与笔记一致。':'与笔记不符。' });
     }
     return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
 }
