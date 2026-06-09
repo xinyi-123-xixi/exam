@@ -278,7 +278,7 @@ function extractKeyPoints(rawText) {
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
-    const MODEL = 'Qwen/Qwen2.5-7B-Instruct';  // 免费可用模型
+    const MODEL = 'Qwen/Qwen2.5-32B-Instruct';  // 免费可用模型
 
     const prompt = `你是一位资深教育专家。请严格按照以下规则，根据提供的学习笔记，生成一套高质量试卷。
 
