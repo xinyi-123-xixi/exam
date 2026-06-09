@@ -338,7 +338,7 @@ async function generatePaperOptimized(content, paperName) {
 }
 
 【学习笔记内容】
-${content.substring(0, 8000)}`;
+${extractKeyPoints(content)}
 
     try {
         const response = await fetch(API_URL, {
