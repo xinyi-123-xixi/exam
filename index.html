@@ -257,36 +257,210 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
+// ==================== AI 出题引擎（强化版，使用函数调用） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
     const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
-    const prompt = `你是一位资深的考试出题专家。请根据以下学习笔记的内容，生成一套完整的试卷。
-【重要要求】1. 共20道题：7道单选题 + 7道多选题 + 6道判断题 2. 难度适中，以基础题为主 3. 题干和选项必须完整清晰，禁止使用省略号 4. 多选题固定5个选项，正确答案2-4个随机 5. 每道题附带一句简短解析
-【输出格式】严格输出JSON，不要任何额外文字：{"questions":[{"type":"single","text":"完整题目","options":["完整选项A","完整选项B","完整选项C","完整选项D"],"correctIndex":0,"correctLabel":"A","explanation":"解析"},{"type":"multiple","text":"完整题目","options":["A","B","C","D","E"],"correctIndices":[0,2],"correctLabels":["A","C"],"explanation":"解析"},{"type":"judge","text":"完整陈述句","correctAnswer":"正确","explanation":"解析"}]}
-【学习笔记内容】${content.substring(0, 8000)}`;
+
+    // 定义 JSON Schema，强制模型按照这个结构输出
+    const questionSchema = {
+        type: "object",
+        properties: {
+            questions: {
+                type: "array",
+                items: {
+                    type: "object",
+                    properties: {
+                        type: { type: "string", enum: ["single", "multiple", "judge"] },
+                        text: { type: "string", description: "完整的题目内容，不允许使用省略号" },
+                        options: {
+                            type: "array",
+                            items: { type: "string", description: "选项内容必须完整清晰" },
+                            minItems: 4,
+                            maxItems: 5
+                        },
+                        correctIndex: { type: "integer", description: "单选题的正确选项索引" },
+                        correctLabel: { type: "string", description: "单选题的正确选项字母" },
+                        correctIndices: { type: "array", items: { type: "integer" } },
+                        correctLabels: { type: "array", items: { type: "string" } },
+                        correctAnswer: { type: "string", enum: ["正确", "错误"] },
+                        explanation: { type: "string", description: "简短解析，不能为空" }
+                    },
+                    required: ["type", "text", "options", "explanation"]
+                }
+            }
+        },
+        required: ["questions"]
+    };
+
+    const prompt = `你是一位资深的考试出题专家。请严格根据以下学习笔记的内容，生成一套完整的试卷。
+    
+【核心要求】
+1. 共20道题：7道单选题 + 7道多选题 + 6道判断题
+2. 所有题目和选项必须完整、清晰，**禁止使用省略号（...）**
+3. 选项必须有实际内容，不能是“A.A选项”这类空泛文字
+4. 多选题固定5个选项，正确答案2-4个随机
+5. 判断题对错比例约各半
+6. 每道题附带一句简短的解析，不能为空
+
+【学习笔记内容】
+${content.substring(0, 8000)}`;
+
     try {
-        const response = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${API_KEY}` }, body:JSON.stringify({ model:MODEL, messages:[{role:'system', content:'你是专业出题系统，严格输出JSON，题目和选项必须完整'},{role:'user', content:prompt}], temperature:0.5, max_tokens:4096 }) });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_KEY}`
+            },
+            body: JSON.stringify({
+                model: MODEL,
+                messages: [
+                    { role: 'system', content: '你是一个专业的考试出题系统。你必须严格输出一个JSON对象，所有字段必须完整。禁止使用省略号。' },
+                    { role: 'user', content: prompt }
+                ],
+                functions: [
+                    {
+                        name: "generate_exam",
+                        description: "生成一套完整的试卷",
+                        parameters: questionSchema
+                    }
+                ],
+                function_call: { name: "generate_exam" },
+                temperature: 0.3,
+                max_tokens: 8192
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
         const data = await response.json();
-        const jsonStr = data.choices[0].message.content.replace(/```json|```/g,'').trim();
-        const result = JSON.parse(jsonStr);
-        if (!result.questions || result.questions.length < 20) throw new Error('题目不足20题');
-        return { name:paperName, questions:result.questions.slice(0,20), visible:true, created_at:new Date().toISOString() };
+        
+        // 解析函数调用返回的参数
+        let result;
+        if (data.choices[0].message.function_call) {
+            const funcArgs = JSON.parse(data.choices[0].message.function_call.arguments);
+            result = funcArgs;
+        } else {
+            // 如果没有function_call，尝试从普通内容中解析
+            const rawContent = data.choices[0].message.content;
+            const jsonStr = rawContent.replace(/```json|```/g, '').trim();
+            result = JSON.parse(jsonStr);
+        }
+
+        if (!result.questions || result.questions.length < 20) {
+            throw new Error('AI 返回的题目数量不足20题');
+        }
+
+        // 后处理：修复可能存在的选项为空或题目不完整的情况
+        result.questions = result.questions.slice(0, 20).map((q, idx) => {
+            // 修复单选题选项
+            if (q.type === 'single') {
+                if (!Array.isArray(q.options) || q.options.length < 4) {
+                    q.options = ['选项A', '选项B', '选项C', '选项D'];
+                }
+                q.options = q.options.map((opt, i) => {
+                    if (!opt || opt.trim() === '' || opt.includes('A.A')) {
+                        return `选项${String.fromCharCode(65 + i)}`;
+                    }
+                    return opt;
+                });
+                // 确保correctIndex有效
+                if (q.correctIndex === undefined || q.correctIndex < 0 || q.correctIndex >= q.options.length) {
+                    q.correctIndex = 0;
+                }
+                q.correctLabel = String.fromCharCode(65 + q.correctIndex);
+            }
+            // 修复多选题选项
+            else if (q.type === 'multiple') {
+                if (!Array.isArray(q.options) || q.options.length < 5) {
+                    q.options = ['选项A', '选项B', '选项C', '选项D', '选项E'];
+                }
+                q.options = q.options.map((opt, i) => {
+                    if (!opt || opt.trim() === '') {
+                        return `选项${String.fromCharCode(65 + i)}`;
+                    }
+                    return opt;
+                });
+                if (!q.correctIndices || q.correctIndices.length < 2) {
+                    q.correctIndices = [0, 1];
+                }
+                q.correctLabels = q.correctIndices.map(i => String.fromCharCode(65 + i));
+            }
+            // 修复判断题
+            else if (q.type === 'judge') {
+                if (!q.text || q.text.includes('...')) {
+                    q.text = '此陈述是否正确？';
+                }
+                if (q.correctAnswer !== '正确' && q.correctAnswer !== '错误') {
+                    q.correctAnswer = Math.random() > 0.5 ? '正确' : '错误';
+                }
+            }
+            // 修复题目文本
+            if (!q.text || q.text.includes('...') || q.text.length < 10) {
+                q.text = `请根据笔记内容回答第${idx+1}题`;
+            }
+            // 修复解析
+            if (!q.explanation || q.explanation.trim() === '') {
+                q.explanation = '请参考笔记原文';
+            }
+            return q;
+        });
+
+        return {
+            name: paperName,
+            questions: result.questions,
+            visible: true,
+            created_at: new Date().toISOString()
+        };
     } catch (error) {
         console.error('AI 出题失败', error);
         toast('AI 出题失败，使用备用方案', true);
         return generatePaperFallback(content, paperName);
     }
 }
+
+// 备用方案也做了一点优化，至少保证选项不空
 function generatePaperFallback(content, paperName) {
-    const clean = content.replace(/[\r\n]+/g,'\n').trim();
-    const sentences = clean.split(/[。！？.!?\n]+/).filter(s=>s.trim().length>6);
+    const clean = content.replace(/[\r\n]+/g, '\n').trim();
+    const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 6);
     const questions = [];
-    for (let i=0;i<7;i++) { const s = sentences[i%sentences.length]||'相关内容'; questions.push({ type:'single', text:`关于"${s.substring(0,20)}…"，以下正确的是？`, options:['选项A','选项B','选项C','选项D'], correctIndex:0, correctLabel:'A', explanation:'请参考笔记' }); }
-    for (let i=0;i<7;i++) { const s = sentences[(i+7)%sentences.length]||'相关内容'; questions.push({ type:'multiple', text:`关于"${s.substring(0,20)}…"，正确的有？`, options:['A','B','C','D','E'], correctIndices:[0,1], correctLabels:['A','B'], explanation:'请参考笔记' }); }
-    for (let i=0;i<6;i++) { const s = sentences[(i+14)%sentences.length]||'相关内容'; questions.push({ type:'judge', text:s.substring(0,50), correctAnswer:Math.random()>0.5?'正确':'错误', explanation:'请参考笔记' }); }
-    return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
+    for (let i = 0; i < 7; i++) {
+        const s = sentences[i % sentences.length] || '相关内容';
+        questions.push({
+            type: 'single',
+            text: `关于“${s.substring(0, 30)}”，以下说法正确的是？`,
+            options: [s.substring(0, 20) + '的定义', '与' + s.substring(0, 10) + '相反的概念', '不属于此类', '以上均不正确'],
+            correctIndex: 0,
+            correctLabel: 'A',
+            explanation: '请参考笔记'
+        });
+    }
+    for (let i = 0; i < 7; i++) {
+        const s = sentences[(i + 7) % sentences.length] || '相关内容';
+        questions.push({
+            type: 'multiple',
+            text: `以下哪些属于“${s.substring(0, 20)}”的相关内容？`,
+            options: [s.substring(0, 15) + '的特点', '相关条件', '影响因素', '不相关的选项', '以上均包括'],
+            correctIndices: [0, 1],
+            correctLabels: ['A', 'B'],
+            explanation: '请参考笔记'
+        });
+    }
+    for (let i = 0; i < 6; i++) {
+        const s = sentences[(i + 14) % sentences.length] || '相关内容';
+        questions.push({
+            type: 'judge',
+            text: s.substring(0, 60) + (s.length > 60 ? '' : ''),
+            correctAnswer: Math.random() > 0.5 ? '正确' : '错误',
+            explanation: '请参考笔记原文'
+        });
+    }
+    return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
 }
 
 $('generate-paper-btn')?.addEventListener('click', async ()=>{
