@@ -262,7 +262,7 @@ $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.va
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
-    const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
+    const MODEL = 'Qwen/Qwen2.5-75B-Instruct';
 
     // 定义 JSON Schema，强制结构输出
     const questionSchema = {
