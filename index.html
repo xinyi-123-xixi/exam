@@ -259,76 +259,66 @@ $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.va
 
 // ==================== AI 出题引擎（强化版，使用函数调用） ====================
 // ==================== AI 出题引擎（专业版，严格遵循出题规范） ====================
+
+// ==================== AI 出题引擎（专家级示例版） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
     const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
-    const MODEL = 'Qwen/Qwen2.5-75B-Instruct';
+    const MODEL = 'Qwen/Qwen2.5-72B-Instruct';  // ⚠️ 请确认你账号有72B模型权限
 
-    // 定义 JSON Schema，强制结构输出
-    const questionSchema = {
-        type: "object",
-        properties: {
-            questions: {
-                type: "array",
-                items: {
-                    type: "object",
-                    properties: {
-                        type: { type: "string", enum: ["single", "multiple", "judge"] },
-                        text: { type: "string", description: "完整的题目，禁止使用省略号，必须是一个清晰的问题或陈述" },
-                        options: {
-                            type: "array",
-                            items: { type: "string", description: "选项内容必须完整，与题目相关，有区分度" },
-                            minItems: 4,
-                            maxItems: 5
-                        },
-                        correctIndex: { type: "integer", description: "单选题正确选项索引" },
-                        correctLabel: { type: "string", description: "单选题正确选项字母" },
-                        correctIndices: { type: "array", items: { type: "integer" } },
-                        correctLabels: { type: "array", items: { type: "string" } },
-                        correctAnswer: { type: "string", enum: ["正确", "错误"] },
-                        explanation: { type: "string", description: "解析，必须写明考点或错因，禁止为空" }
-                    },
-                    required: ["type", "text", "options", "explanation"]
-                }
-            }
-        },
-        required: ["questions"]
-    };
-
-    const prompt = `你是一位资深教育专家和考试命题人。请严格按照以下【出题规则】，根据提供的学习笔记内容，生成一套完整试卷。
+    const prompt = `你是一位资深教育专家。请严格按照以下规则，根据提供的学习笔记，生成一套高质量试卷。
 
 【通用规则】
-1. 共20道题：7道单选题 + 7道多选题 + 6道判断题
-2. 所有题目必须基于学习笔记，不得超纲
-3. 题干完整、清晰、无歧义，禁止使用省略号（...）
-4. 每道题附带一句简明的解析，指出考点或错因
-5. 选项长度尽量均衡，正确答案位置随机
+1. 共20题：7道单选题 + 7道多选题 + 6道判断题
+2. 所有题目必须来自笔记内容，不得超纲
+3. 题干必须是一句完整的问句或清晰陈述，逻辑清晰，不能使用省略号
+4. 每个选项至少包含5个字，内容必须与题目相关，不能随意拼凑
+5. 每题附带解析，解析中注明考点或错误原因
+6. 选项位置随机，不固定答案位置
 
 【单选题规则】
-- 每题4个选项，仅1个正确答案
-- 干扰项设计：形近概念、易错术语、片面表述、常识误区
-- 题型：提问式、填空式、情景式
+- 4个选项，仅1个正确答案
+- 干扰项设计：形近概念、易错表述、常识误区
+- 题目格式示例：
+  "在SMT贴片过程中，以下说法错误的是（）"
+  选项：
+  A. 通常使用超高速贴片设备
+  B. 一般采用螺旋式多头系统
+  C. 贴片速度可达9万点/1h以上
+  D. 贴片过程中不需要进行质量检测
+  答案：D。解析：在SMT贴片过程中，质量检测是至关重要的环节。
 
 【多选题规则】
-- 每题5个选项，正确答案2~4个
-- 正确项：同一考点的多个特征、条件、方法
-- 干扰项：概念错误、条件缺失、反向表述、逻辑矛盾
-- 必须标注“多选”
+- 5个选项，正确答案2~5个均可
+- 正确项：同一考点的多个特征、类型、条件
+- 干扰项：概念错误、条件缺失、反向表述
+- 题目中必须明确标注“多选”
+- 格式示例：
+  "寿命测试的主要类型包括（多选）（ ）"
+  选项：
+  A. 正常寿命测试
+  B. 加速寿命测试
+  C. 贮存寿命测试
+  D. 工作寿命测试
+  E. 循环寿命测试
+  答案：ABCDE。解析：以上5个测试全是可靠性寿命测试项。
 
 【判断题规则】
-- 陈述句必须完整、清晰
-- 错误题目需在解析中写明错误原因和正确表述
-- 对错数量大致各半
+- 陈述句必须完整清晰，对错明确
+- 错误题目必须在解析中说明错误原因
+- 格式示例：
+  "手机中的射频芯片主要负责实现移动通信网络的接入和数据传输。"
+  答案：错误。解析：手机中的基带芯片主要负责实现移动通信网络的接入和数据传输，射频芯片负责射频信号处理。
 
 【输出格式】
-你必须严格输出以下JSON，不得包含任何额外文字。所有字段必须填充完整、有意义的内容。
+你必须严格输出以下JSON，不得包含任何其他文字。所有字段必须填充完整、有意义的内容。
 
 {
   "questions": [
     {
       "type": "single",
       "text": "完整的单选题问题",
-      "options": ["完整选项A", "完整选项B", "完整选项C", "完整选项D"],
+      "options": ["至少5个字的选项A", "至少5个字的选项B", "至少5个字的选项C", "至少5个字的选项D"],
       "correctIndex": 0,
       "correctLabel": "A",
       "explanation": "解析"
@@ -343,7 +333,7 @@ async function generatePaperOptimized(content, paperName) {
     },
     {
       "type": "judge",
-      "text": "一个完整的陈述句，用于判断对错",
+      "text": "完整的陈述句",
       "correctAnswer": "正确",
       "explanation": "解析"
     }
@@ -356,90 +346,47 @@ ${content.substring(0, 8000)}`;
     try {
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
             body: JSON.stringify({
                 model: MODEL,
                 messages: [
-                    { role: 'system', content: '你是一个严格遵循出题规范的考试系统。你必须输出完整、规范的JSON，所有字段必须填充有意义的内容，禁止省略号。' },
+                    { role: 'system', content: '你是严格遵循示例的考试出题专家。必须输出完整JSON，选项至少5个字，题目完整无省略号。' },
                     { role: 'user', content: prompt }
                 ],
-                functions: [
-                    {
-                        name: "generate_exam",
-                        description: "生成一套完整试卷",
-                        parameters: questionSchema
-                    }
-                ],
-                function_call: { name: "generate_exam" },
-                temperature: 0.3,
+                temperature: 0.2,
                 max_tokens: 8192
             })
         });
 
-        if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errText}`);
-        }
-
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
+        const aiOutput = data.choices[0].message.content;
+        const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
+        const result = JSON.parse(jsonStr);
 
-        // 解析函数调用返回的参数
-        let result;
-        if (data.choices[0].message.function_call) {
-            result = JSON.parse(data.choices[0].message.function_call.arguments);
-        } else {
-            const rawContent = data.choices[0].message.content;
-            const jsonStr = rawContent.replace(/```json|```/g, '').trim();
-            result = JSON.parse(jsonStr);
-        }
+        if (!result.questions || result.questions.length < 20) throw new Error('题目数量不足');
 
-        if (!result.questions || result.questions.length < 20) {
-            throw new Error('AI 返回的题目数量不足20题');
-        }
-
-        // 后处理：修复可能存在的空选项、空文本
+        // 后处理修复
         result.questions = result.questions.slice(0, 20).map((q, idx) => {
-            // 修复题目文本
-            if (!q.text || q.text.trim().length < 10 || q.text.includes('...')) {
-                q.text = `请根据笔记内容回答第${idx+1}题（题目生成异常，请联系管理员）`;
-            }
-            // 修复选项
+            if (!q.text || q.text.length < 10) q.text = `请根据笔记回答第${idx+1}题`;
             if (!Array.isArray(q.options) || q.options.length === 0) {
                 q.options = q.type === 'multiple' ? ['选项A','选项B','选项C','选项D','选项E'] : ['选项A','选项B','选项C','选项D'];
-            } else {
-                q.options = q.options.map((opt, i) => {
-                    if (!opt || opt.trim() === '' || opt.includes('...')) {
-                        return `选项${String.fromCharCode(65 + i)}`;
-                    }
-                    return opt;
-                });
             }
-            // 修复解析
-            if (!q.explanation || q.explanation.trim() === '') {
-                q.explanation = '请参考笔记';
-            }
-            // 确保必要字段存在
+            q.options = q.options.map((opt, i) => !opt || opt.trim().length < 3 ? `选项${String.fromCharCode(65+i)}（至少5字）` : opt);
+            if (!q.explanation) q.explanation = '请参考笔记';
             if (q.type === 'single') {
                 if (q.correctIndex === undefined) q.correctIndex = 0;
                 q.correctLabel = String.fromCharCode(65 + q.correctIndex);
             } else if (q.type === 'multiple') {
-                if (!q.correctIndices || q.correctIndices.length < 2) q.correctIndices = [0,1];
+                if (!q.correctIndices || q.correctIndices.length === 0) q.correctIndices = [0, 1];
                 q.correctLabels = q.correctIndices.map(i => String.fromCharCode(65 + i));
             } else if (q.type === 'judge') {
-                if (q.correctAnswer !== '正确' && q.correctAnswer !== '错误') q.correctAnswer = '正确';
+                if (q.correctAnswer !== '正确' && q.correctAnswer !== '错误') q.correctAnswer = Math.random() > 0.5 ? '正确' : '错误';
             }
             return q;
         });
 
-        return {
-            name: paperName,
-            questions: result.questions,
-            visible: true,
-            created_at: new Date().toISOString()
-        };
+        return { name: paperName, questions: result.questions, visible: true, created_at: new Date().toISOString() };
     } catch (error) {
         console.error('AI 出题失败', error);
         toast('AI 出题失败，使用备用方案', true);
@@ -447,46 +394,36 @@ ${content.substring(0, 8000)}`;
     }
 }
 
-// 备用规则出题（同样遵循规范，保证不出现空选项）
 function generatePaperFallback(content, paperName) {
     const clean = content.replace(/[\r\n]+/g, '\n').trim();
     const sentences = clean.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 10);
-    if (sentences.length < 20) {
-        for (let i = sentences.length; i < 20; i++) sentences.push('相关知识点内容');
-    }
+    while (sentences.length < 20) sentences.push('相关知识点内容');
     const questions = [];
-    // 7道单选
     for (let i = 0; i < 7; i++) {
-        const s = sentences[i];
         questions.push({
             type: 'single',
-            text: `关于“${s.substring(0, 30)}…”，以下说法正确的是？`,
-            options: [s.substring(0, 20) + '的定义', '与' + s.substring(0, 10) + '相反的概念', '不属于此类', '以上均不正确'],
-            correctIndex: 0,
-            correctLabel: 'A',
-            explanation: `考点：对“${s.substring(0, 15)}”的理解。`
+            text: `关于“${sentences[i].substring(0, 30)}”，以下说法正确的是？`,
+            options: [`${sentences[i].substring(0, 15)}的定义`, '与之相反的概念', '不属于此类', '以上均不正确'],
+            correctIndex: 0, correctLabel: 'A',
+            explanation: `请参考笔记对“${sentences[i].substring(0, 15)}”的描述。`
         });
     }
-    // 7道多选
     for (let i = 0; i < 7; i++) {
-        const s = sentences[i + 7];
         questions.push({
             type: 'multiple',
-            text: `以下哪些属于“${s.substring(0, 20)}”的相关内容？（多选）`,
-            options: [s.substring(0, 15) + '的特点', '相关条件', '影响因素', '不相关的选项', '以上均包括'],
-            correctIndices: [0, 1],
-            correctLabels: ['A', 'B'],
-            explanation: `正确选项包括了“${s.substring(0, 15)}”的核心要点。`
+            text: `下列属于“${sentences[i+7].substring(0, 20)}”相关的内容有？（多选）`,
+            options: [`${sentences[i+7].substring(0, 10)}的特点`, '必要条件', '重要影响因素', '不相关的描述', '以上均包含'],
+            correctIndices: [0, 1], correctLabels: ['A', 'B'],
+            explanation: `正确选项与“${sentences[i+7].substring(0, 15)}”直接相关。`
         });
     }
-    // 6道判断
     for (let i = 0; i < 6; i++) {
-        const s = sentences[i + 14];
+        const s = sentences[i+14];
         questions.push({
             type: 'judge',
-            text: s.length > 60 ? s.substring(0, 60) + '（判断对错）' : s + '（判断对错）',
+            text: s.length > 50 ? s.substring(0, 50) + '（判断对错）' : s + '（判断对错）',
             correctAnswer: Math.random() > 0.5 ? '正确' : '错误',
-            explanation: s.length > 60 ? '请参考原文验证。' : '此陈述与原文一致。'
+            explanation: s.length > 50 ? '请参考原文验证。' : '请查阅笔记确认。'
         });
     }
     return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
