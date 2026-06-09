@@ -639,12 +639,16 @@ function showDetail(details){ let h=''; details.forEach((d,i)=>h+=`<p>${d.isCorr
 $('close-detail-btn')?.addEventListener('click', ()=> { $('detail-modal').style.display='none'; });
 ['settings-modal','result-modal','detail-modal'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('click', e=>{ if(e.target===el) el.style.display='none'; }); });
 
-async function loadRecords(){
+async function loadRecords() {
     try {
         const { data, error } = await client.from('records').select('*').order('exam_date', { ascending: false });
         if (error) throw error;
-        const tbody = $('records-tbody'); if (!tbody) return;
-        if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="10">暂无记录</td></tr>'; return; }
+        const tbody = $('records-tbody');
+        if (!tbody) return;
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无记录</td></tr>';
+            return;
+        }
         tbody.innerHTML = data.reverse().map((r, i) => `
             <tr>
                 <td>${data.length - i}</td>
@@ -659,14 +663,30 @@ async function loadRecords(){
                 <td>
                     <button class="btn btn-sm btn-outline" onclick="viewRecord('${r.id}')">详情</button>
                     <button class="btn btn-sm" style="background:#f59e0b;color:#fff;" onclick="retakeRecord('${r.id}')">重考</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteRecordById('${r.id}')">删除</button>
                 </td>
             </tr>
         `).join('');
-    } catch (e) { console.error('加载记录失败', e); toast('加载考试记录失败', true); }
+    } catch (e) {
+        console.error('加载记录失败', e);
+        toast('加载考试记录失败，请检查数据库权限', true);
+    }
 }
 window.viewRecord=async(id)=>{ const { data } = await client.from('records').select('*').eq('id', id); if(data?.[0]) showDetail(data[0].details); };
 window.retakeRecord=async(id)=>{ if(confirm('允许重考？')){ await client.from('records').delete().eq('id', id); loadRecords(); }};
 
+window.deleteRecordById = async (id) => {
+    if (!confirm('确定要删除这条考试记录吗？此操作不可恢复！')) return;
+    try {
+        const { error } = await client.from('records').delete().eq('id', id);
+        if (error) throw error;
+        toast('记录已删除');
+        loadRecords(); // 刷新列表
+    } catch (e) {
+        console.error('删除失败', e);
+        toast('删除失败，请检查权限', true);
+    }
+};
 setRole('student');
 switchSec('exam');
 </script>
