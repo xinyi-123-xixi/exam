@@ -463,14 +463,32 @@ async function submitExam(){
         if (error) throw error;
         toast('考试记录已保存');
     } catch (e) { console.error('记录保存失败', e); toast('记录保存失败: ' + e.message, true); refreshAll(); return; }
+        // 生成增强反馈
+    const enhancedFeedback = generateEnhancedFeedback(details);
+
     const rs = $('result-score'); if(rs) rs.textContent = score + '分';
     const rd = $('result-detail'); if(rd) rd.textContent = `正确 ${correct}/20 | 用时 ${dur}`;
-    const fb = $('feedback-box'); if(fb) fb.innerHTML = genFeedback(details);
+    const fb = $('feedback-box'); if(fb) fb.innerHTML = enhancedFeedback;
     const rm = $('result-modal'); if(rm) rm.style.display = 'flex';
-    const vdb = $('view-detail-btn'); if(vdb) vdb.onclick = () => showDetail(details);
+
+    const vdb = $('view-detail-btn');
+    if(vdb) vdb.onclick = () => showDetailWithAdvice(details);
+
     const crb = $('close-result-btn');
-    if(crb) crb.onclick = () => { $('result-modal').style.display='none'; $('exam-interface').style.display='none'; $('exam-select-card').style.display='block'; $('timer-bar').classList.remove('warning'); $('exam-student-id').value=''; $('exam-student-name').value=''; refreshAll(); if (role==='admin' && $('records-section')?.classList.contains('active')) loadRecords(); };
-    $('exam-interface').style.display='none'; $('exam-select-card').style.display='block'; $('timer-bar').classList.remove('warning');
+    if(crb) crb.onclick = () => {
+        $('result-modal').style.display='none';
+        $('exam-interface').style.display='none';
+        $('exam-select-card').style.display='block';
+        $('timer-bar').classList.remove('warning');
+        $('exam-student-id').value='';
+        $('exam-student-name').value='';
+        refreshAll();
+        if (role==='admin' && $('records-section')?.classList.contains('active')) loadRecords();
+    };
+
+    $('exam-interface').style.display='none';
+    $('exam-select-card').style.display='block';
+    $('timer-bar').classList.remove('warning');
     refreshAll();
 }
 function genFeedback(d){ const s={t:0,c:0},m={t:0,c:0},j={t:0,c:0}; d.forEach(x=>{ if(x.type==='single'){ s.t++; if(x.isCorrect)s.c++; } else if(x.type==='multiple'){ m.t++; if(x.isCorrect)m.c++; } else{ j.t++; if(x.isCorrect)j.c++; } }); return `单选正确率：${s.t?(s.c/s.t*100).toFixed(0):0}% 多选：${m.t?(m.c/m.t*100).toFixed(0):0}% 判断：${j.t?(j.c/j.t*100).toFixed(0):0}%`; }
