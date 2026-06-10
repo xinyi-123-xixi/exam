@@ -269,19 +269,19 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// ==================== AI 出题引擎（qwen-max + 清理） ====================
+// ==================== AI 出题引擎（qwen-plus + 自动补全） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
     const API_KEY = 'sk-f6fae1031b314f2aa606867b760dd754';
-    const MODEL = 'qwen-max';  // 最强模型
+    const MODEL = 'qwen-plus'; // 退回稳定版
 
-    const prompt = `你是教育专家。基于笔记生成20题：7单选（4选项）+7多选（5选项）+6判断。
+    const prompt = `你是教育专家。基于笔记生成试卷。必须严格输出恰好20道题：7道单选题（4选项）、7道多选题（5选项）、6道判断题。
 规则：
-1. 题目完整清晰，禁止省略号。
+1. 所有题目完整清晰，禁止省略号。
 2. 选项至少5字，与题目相关。
 3. 解析指出考点或错因。
 4. 随机排列选项。
-5. 严格输出JSON：
+5. 严格输出以下JSON格式，不得包含任何额外文字：
 {
   "questions": [
     {
@@ -322,11 +322,11 @@ ${content.substring(0, 8000)}`;
             body: JSON.stringify({
                 model: MODEL,
                 messages: [
-                    { role: 'system', content: '你输出纯净JSON，不包含任何额外字符。' },
+                    { role: 'system', content: '你输出纯净JSON。必须包含20个题目，少一个都不行。' },
                     { role: 'user', content: prompt }
                 ],
-                temperature: 0.1,
-                max_tokens: 8192
+                temperature: 0.2,
+                max_tokens: 12000  // 增大到12000，防止截断
             })
         });
 
@@ -340,11 +340,19 @@ ${content.substring(0, 8000)}`;
         const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
         const result = JSON.parse(jsonStr);
 
-        if (!result.questions || result.questions.length < 20) throw new Error('题目数量不足');
+        let questions = result.questions || [];
 
-        // 清理每一个字段
-        result.questions = result.questions.slice(0, 20).map((q, idx) => {
-            q.text = cleanText(q.text) || ('请根据笔记回答第' + (idx+1) + '题');
+        // 自动补全不足的题目
+        if (questions.length < 20) {
+            console.warn(`AI只生成了${questions.length}题，补全中...`);
+            const fallbackPaper = generatePaperFallback(content, paperName);
+            const needed = 20 - questions.length;
+            questions = questions.concat(fallbackPaper.questions.slice(0, needed));
+        }
+
+        // 清理每个字段
+        questions = questions.slice(0, 20).map((q, idx) => {
+            q.text = cleanText(q.text) || `请根据笔记回答第${idx + 1}题`;
             if (!Array.isArray(q.options) || q.options.length === 0) {
                 q.options = q.type === 'multiple' ? ['选项A','选项B','选项C','选项D','选项E'] : ['选项A','选项B','选项C','选项D'];
             }
@@ -362,7 +370,7 @@ ${content.substring(0, 8000)}`;
             return q;
         });
 
-        return { name: paperName, questions: result.questions, visible: true, created_at: new Date().toISOString() };
+        return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
     } catch (error) {
         console.error('AI 出题失败', error);
         toast('AI 出题失败，使用备用方案', true);
@@ -370,6 +378,7 @@ ${content.substring(0, 8000)}`;
     }
 }
 
+// 备用方案（保持不变，已优化）
 function generatePaperFallback(content, paperName) {
     const sentences = content.replace(/[\r\n]+/g, '\n').split(/[。！？.!?\n]+/).filter(s => s.trim().length > 10);
     while (sentences.length < 20) sentences.push('本知识点需要掌握核心概念与特征');
