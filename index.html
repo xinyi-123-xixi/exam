@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能考试系统 - 稳定版</title>
+    <title>智能考试系统 - 阿里云百炼版</title>
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js?_=20260101"></script>
     <!-- 文件解析库 -->
@@ -82,7 +82,6 @@
 </header>
 
 <div class="main-container">
-    <!-- 考试页面 -->
     <section class="section active" id="exam-section">
         <div class="card" id="exam-select-card">
             <div class="card-header">📚 选择试卷</div>
@@ -103,7 +102,6 @@
             <div class="card"><div id="exam-questions-container"></div><button class="btn btn-success" id="submit-exam-btn" style="margin-top:20px;">✅ 提交考卷</button></div>
         </div>
     </section>
-    <!-- 管理页面 -->
     <section class="section" id="admin-section">
         <div class="card">
             <div class="card-header">📤 上传学习笔记</div>
@@ -130,7 +128,6 @@
             <div id="admin-paper-list"></div>
         </div>
     </section>
-    <!-- 记录页面 -->
     <section class="section" id="records-section">
         <div class="card">
             <div class="card-header">📊 考试记录总表
@@ -261,11 +258,11 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// ==================== AI 出题引擎（使用完整笔记，不截断关键点） ====================
+// ==================== AI 出题引擎（阿里云百炼 qwen-plus） ====================
 async function generatePaperOptimized(content, paperName) {
-    const API_URL = 'https://api.siliconflow.cn/v1/chat/completions';
-    const API_KEY = 'sk-rpdjvudkpvmlkmatawkombtpykeojzfavzuvdvuwmohnnhij';
-    const MODEL = 'Qwen/Qwen2.5-7B-Instruct';
+    const API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+    const API_KEY = 'sk-f6fae1031b314f2aa606867b760dd754';
+    const MODEL = 'qwen-plus';
 
     const prompt = `你是一位资深教育专家。请严格按照以下规则，根据提供的学习笔记，生成一套高质量试卷。
 
