@@ -269,111 +269,91 @@ $('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTar
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
 $('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
 
-// ==================== AI 出题引擎（qwen-plus + 自动补全） ====================
+// ==================== AI 出题引擎（增强解析约束） ====================
 async function generatePaperOptimized(content, paperName) {
     const API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
     const API_KEY = 'sk-f6fae1031b314f2aa606867b760dd754';
-    const MODEL = 'qwen-plus'; // 退回稳定版
+    const MODEL = 'qwen-plus';
 
     const prompt = `你是教育专家。基于笔记生成试卷。必须严格输出恰好20道题：7道单选题（4选项）、7道多选题（5选项）、6道判断题。
 规则：
-1. 所有题目完整清晰，禁止省略号。
+1. 题目完整清晰，禁止省略号。
 2. 选项至少5字，与题目相关。
-3. 解析指出考点或错因。
+3. 解析必须包含：单选题写出正确答案的内容，多选题列出所有正确选项，判断题说明对错原因。解析不能为空。
 4. 随机排列选项。
-5. 严格输出以下JSON格式，不得包含任何额外文字：
+5. 严格输出JSON格式，不得包含任何额外文字。
+格式示例：
 {
   "questions": [
     {
       "type": "single",
       "text": "完整问题",
-      "options": ["选项A完整内容", "选项B完整内容", "选项C完整内容", "选项D完整内容"],
+      "options": ["A完整选项", "B完整选项", "C完整选项", "D完整选项"],
       "correctIndex": 0,
       "correctLabel": "A",
-      "explanation": "解析"
+      "explanation": "正确答案是A，因为..."
     },
     {
       "type": "multiple",
       "text": "完整问题（多选）",
-      "options": ["选项A", "选项B", "选项C", "选项D", "选项E"],
-      "correctIndices": [0, 2],
-      "correctLabels": ["A", "C"],
-      "explanation": "解析"
+      "options": ["A", "B", "C", "D", "E"],
+      "correctIndices": [0,2],
+      "correctLabels": ["A","C"],
+      "explanation": "正确选项为A和C，原因是..."
     },
     {
       "type": "judge",
       "text": "完整陈述句",
       "correctAnswer": "正确",
-      "explanation": "解析"
+      "explanation": "该说法正确，因为..."
     }
   ]
 }
-
-笔记：
-${content.substring(0, 8000)}`;
+笔记：${content.substring(0, 8000)}`;
 
     try {
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                messages: [
-                    { role: 'system', content: '你输出纯净JSON。必须包含20个题目，少一个都不行。' },
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.2,
-                max_tokens: 12000  // 增大到12000，防止截断
-            })
+            headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${API_KEY}` },
+            body: JSON.stringify({ model:MODEL, messages:[
+                {role:'system', content:'你输出纯净JSON。解析必须具体，不能省略。'},
+                {role:'user', content:prompt}
+            ], temperature:0.2, max_tokens:12000 })
         });
 
-        if (!response.ok) {
-            const errText = await response.text();
-            throw new Error('HTTP ' + response.status + ': ' + errText);
-        }
-
+        if (!response.ok) throw new Error('HTTP '+response.status);
         const data = await response.json();
         const aiOutput = data.choices[0].message.content;
-        const jsonStr = aiOutput.replace(/```json|```/g, '').trim();
+        const jsonStr = aiOutput.replace(/```json|```/g,'').trim();
         const result = JSON.parse(jsonStr);
+        let questions = (result.questions || []).slice(0,20);
 
-        let questions = result.questions || [];
-
-        // 自动补全不足的题目
+        // 补全数量
         if (questions.length < 20) {
-            console.warn(`AI只生成了${questions.length}题，补全中...`);
-            const fallbackPaper = generatePaperFallback(content, paperName);
-            const needed = 20 - questions.length;
-            questions = questions.concat(fallbackPaper.questions.slice(0, needed));
+            const fb = generatePaperFallback(content, paperName);
+            questions = questions.concat(fb.questions.slice(0,20-questions.length));
         }
 
-        // 清理每个字段
-        questions = questions.slice(0, 20).map((q, idx) => {
-            q.text = cleanText(q.text) || `请根据笔记回答第${idx + 1}题`;
-            if (!Array.isArray(q.options) || q.options.length === 0) {
-                q.options = q.type === 'multiple' ? ['选项A','选项B','选项C','选项D','选项E'] : ['选项A','选项B','选项C','选项D'];
+        // 清理并强制补充解析
+        questions = questions.map((q,idx) => {
+            q.text = cleanText(q.text) || `请根据笔记回答第${idx+1}题`;
+            if (!Array.isArray(q.options) || q.options.length===0) {
+                q.options = q.type==='multiple' ? ['选项A','选项B','选项C','选项D','选项E'] : ['选项A','选项B','选项C','选项D'];
             }
-            q.options = q.options.map(opt => cleanText(opt) || '选项待补充');
-            q.explanation = cleanText(q.explanation) || '请参考笔记';
-            if (q.type === 'single') {
-                if (q.correctIndex === undefined) q.correctIndex = 0;
-                q.correctLabel = String.fromCharCode(65 + (q.correctIndex % 4));
-            } else if (q.type === 'multiple') {
-                if (!q.correctIndices || q.correctIndices.length === 0) q.correctIndices = [0, 1];
-                q.correctLabels = q.correctIndices.map(i => String.fromCharCode(65 + (i % 5)));
-            } else if (q.type === 'judge') {
-                if (q.correctAnswer !== '正确' && q.correctAnswer !== '错误') q.correctAnswer = Math.random() > 0.5 ? '正确' : '错误';
+            q.options = q.options.map(o => cleanText(o) || '待补充');
+            if (!q.explanation || q.explanation.trim()==='') {
+                if (q.type==='single') q.explanation = `正确答案是${q.correctLabel || 'A'}。`;
+                else if (q.type==='multiple') q.explanation = `正确选项为${(q.correctLabels||['A','B']).join('、')}。`;
+                else q.explanation = q.correctAnswer==='正确'?'该说法正确。':'该说法错误。';
             }
+            q.explanation = cleanText(q.explanation);
             return q;
         });
 
-        return { name: paperName, questions, visible: true, created_at: new Date().toISOString() };
-    } catch (error) {
-        console.error('AI 出题失败', error);
-        toast('AI 出题失败，使用备用方案', true);
+        return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
+    } catch(e) {
+        console.error(e);
+        toast('AI出题失败，使用备用方案',true);
         return generatePaperFallback(content, paperName);
     }
 }
