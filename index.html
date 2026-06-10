@@ -217,6 +217,7 @@ $('role-toggle-btn')?.addEventListener('click', ()=>{
 async function refreshAll(){ /* 完整保留原来的代码，此处省略 */ }
 async function updateExamState(){ /* 完整保留原来的代码 */ }
 async function loadRecords(){
+    if (typeof selectedRecordIds === 'undefined') window.selectedRecordIds = new Set();
     try {
         const { data, error } = await client.from('records').select('*').order('exam_date', { ascending: false });
         if (error) throw error;
@@ -366,9 +367,56 @@ function generatePaperFallback(content, paperName) {
     return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
 }
 
-// ==================== 考试、反馈、记录等功能 ====================
-// 后续所有原有逻辑（如 submitExam、showDetailWithAdvice、generateEnhancedFeedback、对比报告等）保持不变
-// 请将您之前稳定版本的完整函数体复制到此处
+// ==================== 记录勾选与对比报告 ====================
+window.toggleRecordSelection = (id, checkbox) => {
+    if (!selectedRecordIds) selectedRecordIds = new Set();
+    if (checkbox.checked) selectedRecordIds.add(id);
+    else selectedRecordIds.delete(id);
+};
+
+window.generateCompareReport = async () => {
+    if (!selectedRecordIds || selectedRecordIds.size === 0) { toast('请先选中至少一条记录', true); return; }
+    const allRecords = await client.from('records').select('*');
+    const selected = allRecords.data.filter(r => selectedRecordIds.has(r.id));
+    if (selected.length === 0) { toast('未找到选中的记录', true); return; }
+
+    let html = '<table><tr><th>姓名</th><th>工号</th><th>得分</th><th>正确率</th><th>薄弱题型</th></tr>';
+    const allWrong = [];
+    selected.forEach(r => {
+        const rate = r.correct_count / r.total_questions;
+        const stats = {single:{t:0,c:0},multiple:{t:0,c:0},judge:{t:0,c:0}};
+        (r.details||[]).forEach(d => {
+            if (d.type==='single'){ stats.single.t++; if(d.isCorrect) stats.single.c++; }
+            else if (d.type==='multiple'){ stats.multiple.t++; if(d.isCorrect) stats.multiple.c++; }
+            else { stats.judge.t++; if(d.isCorrect) stats.judge.c++; }
+        });
+        const weakest = [
+            {name:'单选题',r:stats.single.t?stats.single.c/stats.single.t:1},
+            {name:'多选题',r:stats.multiple.t?stats.multiple.c/stats.multiple.t:1},
+            {name:'判断题',r:stats.judge.t?stats.judge.c/stats.judge.t:1}
+        ].sort((a,b)=>a.r-b.r)[0].name;
+        html += `<tr><td>${esc(r.student_name)}</td><td>${esc(r.student_id)}</td><td>${r.score}分</td><td>${(rate*100).toFixed(0)}%</td><td>${weakest}</td></tr>`;
+        (r.details||[]).filter(d=>!d.isCorrect).forEach(d => allWrong.push(d.questionText.substring(0,20)));
+    });
+    html += '</table><br><strong>综合建议：</strong>';
+    const common = [...new Set(allWrong)].slice(0,5);
+    html += common.length ? `共同错题涉及：${common.join('、')}，建议加强相关模块学习。` : '未发现明显共同薄弱点。';
+    $('compare-content').innerHTML = html;
+    $('compare-modal').style.display = 'flex';
+};
+
+// 全选按钮
+$('select-all-records')?.addEventListener('change', function() {
+    const checkboxes = $$('.record-checkbox');
+    checkboxes.forEach(cb => { cb.checked = this.checked; });
+    if (!selectedRecordIds) selectedRecordIds = new Set();
+    selectedRecordIds.clear();
+    if (this.checked) checkboxes.forEach(cb => selectedRecordIds.add(cb.dataset.id));
+});
+
+// 对比报告按钮
+$('compare-btn')?.addEventListener('click', window.generateCompareReport);
+$('close-compare-btn')?.addEventListener('click', () => { $('compare-modal').style.display = 'none'; });
 
 // 初始化
 setRole('student');
