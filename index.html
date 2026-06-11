@@ -266,14 +266,22 @@ async function processMultipleFiles(files){
     if(text.trim().length<200){ toast('内容过短',true); return; }
     S.content=text; const st = $('upload-status'); if(st) st.textContent='✅ 已加载文件'; toast('文件加载成功');
 }
-// 上传区域事件绑定（关键补全）
+// 上传区域事件绑定
 $('upload-zone')?.addEventListener('click', ()=>$('file-input')?.click());
 $('file-input')?.addEventListener('change', e=>{ if(e.target.files.length) processMultipleFiles(Array.from(e.target.files)); });
 $('upload-zone')?.addEventListener('dragover', e=>{ e.preventDefault(); e.currentTarget.classList.add('drag-over'); });
 $('upload-zone')?.addEventListener('dragleave', e=>{ e.currentTarget.classList.remove('drag-over'); });
-$('upload-zone')?.addEventListener('drop', e=>{ e.preventDefault(); e.currentTarget.classList.remove('drag-over'); if(e.dataTransfer.files.length) processMultipleFiles(Array.from(e.dataTransfer.files)); });
+$('upload-zone')?.addEventListener('drop', e=>{
+    e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+    if(e.dataTransfer.files.length) processMultipleFiles(Array.from(e.dataTransfer.files));
+});
 $('paste-text-btn')?.addEventListener('click', ()=>{ $('paste-area').style.display='block'; $('pasted-text')?.focus(); });
-$('confirm-paste')?.addEventListener('click', ()=>{ const t=$('pasted-text')?.value.trim(); if(!t) return toast('请粘贴',true); S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本'; $('paste-area').style.display='none'; });
+$('confirm-paste')?.addEventListener('click', ()=>{
+    const t=$('pasted-text')?.value.trim();
+    if(!t) return toast('请粘贴',true);
+    S.content=t; const st=$('upload-status'); if(st) st.textContent='✅ 已粘贴文本';
+    $('paste-area').style.display='none';
+});
 $('clear-content-btn')?.addEventListener('click', ()=>{ S.content=''; const st=$('upload-status'); if(st) st.textContent=''; });
 
 // ==================== AI 出题引擎（完整版） ====================
@@ -359,7 +367,8 @@ async function generatePaperOptimized(content, paperName) {
             return q;
         });
         return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
-    } catch(e) {
+    } 
+        catch(e) {
         console.error(e);
         toast('AI出题失败，使用备用方案',true);
         return generatePaperFallback(content, paperName);
@@ -552,6 +561,15 @@ window.toggleRecordSelection = (id, checkbox) => {
     if (checkbox.checked) selectedRecordIds.add(id);
     else selectedRecordIds.delete(id);
 };
+$('select-all-records')?.addEventListener('change', function() {
+    const checkboxes = $$('.record-checkbox');
+    checkboxes.forEach(cb => { cb.checked = this.checked; });
+    if (!selectedRecordIds) selectedRecordIds = new Set();
+    selectedRecordIds.clear();
+    if (this.checked) checkboxes.forEach(cb => selectedRecordIds.add(cb.dataset.id));
+});
+$('compare-btn')?.addEventListener('click', generateCompareReport);
+$('close-compare-btn')?.addEventListener('click', () => { $('compare-modal').style.display = 'none'; });
 
 window.generateCompareReport = async () => {
     if (!selectedRecordIds || selectedRecordIds.size === 0) { toast('请先选中至少一条记录', true); return; }
