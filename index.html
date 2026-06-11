@@ -365,7 +365,7 @@ async function generatePaperOptimized(content, paperName) {
             }
             q.explanation = cleanText(q.explanation);
             return q;
-        });
+        };
         return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
     } catch(e) {
         console.error(e);
