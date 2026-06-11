@@ -367,8 +367,7 @@ async function generatePaperOptimized(content, paperName) {
             return q;
         });
         return { name:paperName, questions, visible:true, created_at:new Date().toISOString() };
-    } 
-        catch(e) {
+    } catch(e) {
         console.error(e);
         toast('AI出题失败，使用备用方案',true);
         return generatePaperFallback(content, paperName);
@@ -561,6 +560,7 @@ window.toggleRecordSelection = (id, checkbox) => {
     if (checkbox.checked) selectedRecordIds.add(id);
     else selectedRecordIds.delete(id);
 };
+
 $('select-all-records')?.addEventListener('change', function() {
     const checkboxes = $$('.record-checkbox');
     checkboxes.forEach(cb => { cb.checked = this.checked; });
@@ -568,6 +568,7 @@ $('select-all-records')?.addEventListener('change', function() {
     selectedRecordIds.clear();
     if (this.checked) checkboxes.forEach(cb => selectedRecordIds.add(cb.dataset.id));
 });
+
 $('compare-btn')?.addEventListener('click', generateCompareReport);
 $('close-compare-btn')?.addEventListener('click', () => { $('compare-modal').style.display = 'none'; });
 
@@ -600,16 +601,6 @@ window.generateCompareReport = async () => {
     $('compare-content').innerHTML = html;
     $('compare-modal').style.display = 'flex';
 };
-
-$('select-all-records')?.addEventListener('change', function() {
-    const checkboxes = $$('.record-checkbox');
-    checkboxes.forEach(cb => { cb.checked = this.checked; });
-    if (!selectedRecordIds) selectedRecordIds = new Set();
-    selectedRecordIds.clear();
-    if (this.checked) checkboxes.forEach(cb => selectedRecordIds.add(cb.dataset.id));
-});
-$('compare-btn')?.addEventListener('click', window.generateCompareReport);
-$('close-compare-btn')?.addEventListener('click', () => { $('compare-modal').style.display = 'none'; });
 
 // ==================== 初始化 ====================
 setRole('student');
