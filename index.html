@@ -520,6 +520,7 @@ $('close-detail-btn')?.addEventListener('click', ()=> { $('detail-modal').style.
 ['settings-modal','result-modal','detail-modal'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('click', e=>{ if(e.target===el) el.style.display='none'; }); });
 
 // ==================== 记录管理 ====================
+// ==================== 记录管理 ====================
 async function loadRecords(){
     if (typeof selectedRecordIds === 'undefined') window.selectedRecordIds = new Set();
     try {
@@ -548,29 +549,32 @@ async function loadRecords(){
 `).join('');
     } catch (e) { console.error('加载记录失败', e); toast('加载考试记录失败', true); }
 }
-window.viewRecord=async(id)=>{ const { data } = await client.from('records').select('*').eq('id', id); if(data?.[0]) showDetailWithAdvice(data[0].details); };
-window.retakeRecord=async(id)=>{ if(confirm('允许重考？')){ await client.from('records').delete().eq('id', id); loadRecords(); }};
-window.deleteRecordById=async(id)=>{ if(confirm('确定要删除这条记录吗？')){ await client.from('records').delete().eq('id', id); loadRecords(); toast('记录已删除'); }};
 
-// ==================== 对比报告 ====================
-window.toggleRecordSelection = (id, checkbox) => {
+// 全局暴露函数（供页面onclick调用）
+function toggleRecordSelection(id, checkbox) {
     if (!selectedRecordIds) selectedRecordIds = new Set();
     if (checkbox.checked) selectedRecordIds.add(id);
     else selectedRecordIds.delete(id);
-};
+}
+function viewRecord(id) {
+    return (async () => {
+        const { data } = await client.from('records').select('*').eq('id', id); 
+        if(data?.[0]) showDetailWithAdvice(data[0].details);
+    })();
+}
+function retakeRecord(id) {
+    return (async () => {
+        if(confirm('允许重考？')){ await client.from('records').delete().eq('id', id); loadRecords(); }
+    })();
+}
+function deleteRecordById(id) {
+    return (async () => {
+        if(confirm('确定要删除这条记录吗？')){ await client.from('records').delete().eq('id', id); loadRecords(); toast('记录已删除'); }
+    })();
+}
 
-$('select-all-records')?.addEventListener('change', function() {
-    const checkboxes = $$('.record-checkbox');
-    checkboxes.forEach(cb => { cb.checked = this.checked; });
-    if (!selectedRecordIds) selectedRecordIds = new Set();
-    selectedRecordIds.clear();
-    if (this.checked) checkboxes.forEach(cb => selectedRecordIds.add(cb.dataset.id));
-});
-
-$('compare-btn')?.addEventListener('click', generateCompareReport);
-$('close-compare-btn')?.addEventListener('click', () => { $('compare-modal').style.display = 'none'; });
-
-window.generateCompareReport = async () => {
+// 对比报告核心函数（提前定义）
+async function generateCompareReport() {
     if (!selectedRecordIds || selectedRecordIds.size === 0) { toast('请先选中至少一条记录', true); return; }
     const allRecords = await client.from('records').select('*');
     const selected = allRecords.data.filter(r => selectedRecordIds.has(r.id));
@@ -598,8 +602,20 @@ window.generateCompareReport = async () => {
     html += common.length ? `共同错题涉及：${common.join('、')}，建议加强相关模块学习。` : '未发现明显共同薄弱点。';
     $('compare-content').innerHTML = html;
     $('compare-modal').style.display = 'flex';
-};
+}
 
+// 全选复选框事件
+$('select-all-records')?.addEventListener('change', function() {
+    const checkboxes = $$('.record-checkbox');
+    checkboxes.forEach(cb => { cb.checked = this.checked; });
+    if (!selectedRecordIds) selectedRecordIds = new Set();
+    selectedRecordIds.clear();
+    if (this.checked) checkboxes.forEach(cb => selectedRecordIds.add(cb.dataset.id));
+});
+
+// 对比、关闭弹窗事件（现在函数已存在，正常绑定）
+$('compare-btn')?.addEventListener('click', generateCompareReport);
+$('close-compare-btn')?.addEventListener('click', () => { $('compare-modal').style.display = 'none'; });
 // ==================== 初始化 ====================
 setRole('student');
 switchSec('exam');
